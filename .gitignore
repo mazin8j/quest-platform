@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+dist/
+.next/
+.expo/
+*.log
+CLAUDE.local.md
+.terraform/
+*.tfstate
+*.tfstate.*
