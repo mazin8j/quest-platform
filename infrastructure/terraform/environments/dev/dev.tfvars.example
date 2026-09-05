@@ -1,0 +1,10 @@
+# Copy to dev.tfvars (git-ignored) and fill in. No secrets belong here.
+environment         = "dev"
+region              = "me-central-1"
+availability_zones  = ["me-central-1a", "me-central-1b"]
+media_bucket_name   = "quest-dev-media-CHANGE-ME"
+api_container_image = "ACCOUNT_ID.dkr.ecr.me-central-1.amazonaws.com/quest-api:CHANGE-ME"
+web_origins         = ["http://localhost:3000", "http://localhost:3001"]
+api_desired_count   = 1
+db_instance_class   = "db.t4g.medium"
+redis_node_type     = "cache.t4g.micro"

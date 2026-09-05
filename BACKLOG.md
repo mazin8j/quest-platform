@@ -1,6 +1,7 @@
 # QUEST Backlog
 
 ## P0 — MVP
+
 - Identity and profile
 - Interests and onboarding
 - Quest create/publish/discover
@@ -20,6 +21,7 @@
 - Basic personalization
 
 ## P1 — Growth
+
 - Crews
 - Quest chains
 - Mystery Quest
@@ -30,6 +32,7 @@
 - Enhanced proof verification
 
 ## P2 — Monetization
+
 - Sponsored Quests
 - Brand campaigns
 - Creator monetization
@@ -37,19 +40,37 @@
 - Corporate Quest
 - Tourism/destination Quest packages
 
-## Technical Debt & Audit Findings (Phase Gate Audit 2026-09-04)
-Source: `docs/governance/PHASE_GATE_AUDIT_2026-09-04.md`. P0/P1 items (D-01..D-10) are tracked as blockers in `PROGRESS.md`.
+## Technical debt & foundation follow-ups (from Phase 00, 2026-09-04)
 
-### P2 — should fix (during Phase 00)
-- D-11 Add explicit "Inputs" and "Quality gates" sections to every agent in `.claude/agents/`
-- D-12 Add explicit exit criteria to phase skills 03, 04, 05, 07–16; add "Use when / Done when" to reusable skills
-- D-13 Reconcile `CLAUDE.md` Repository Shape with the actual layout (`docs/governance`, `docs/roadmap` exist; `infrastructure/docker` in bootstrap script)
-- D-14 Make `CLAUDE.md` quality-gate section reference `docs/governance/QUALITY_GATES.md` (single source of truth)
-- D-15 Record the `me-central-1` region / data-residency decision in ADR-008
+### Must do in the phase that first needs it
 
-### P3 — improvement
-- D-16 Replace Windows-only `scripts/bootstrap-directories.ps1` with a committed skeleton; delete script
-- D-17 Extend `.env.example` with S3 key placeholders, session/JWT secret placeholder, AI model config variable (in the phase that needs each)
-- D-18 Add `*.tsbuildinfo`, `.turbo/`, `build/`, IDE folders to `.gitignore` once tooling is chosen
-- D-19 Decide whether agent `model:` pins are intentional or should be removed to match README "keep model selection configurable"
-- D-20 Write a developer setup guide (Node version, package manager, Docker prerequisites)
+- TD-01 Transactional outbox for domain events before the first cross-process consumer (Phase 05 at
+  the latest); EventBridge publisher adapter + SQS consumer runtime (same image, worker entrypoint).
+- TD-02 Redis-backed `@nestjs/throttler` storage before running > 1 API replica.
+- TD-03 OpenAPI generation from zod schemas with the first resource endpoints (Phase 01).
+- TD-04 OpenTelemetry NodeSDK preload (`OTEL_ENABLED=true`) + ADOT collector sidecar with the first
+  deployed environment; `MetricsPort` implementation over the OTel meter.
+- TD-05 Deploy workflow (build/push image to ECR, `terraform plan` on PR, gated `apply`) once an AWS
+  account and remote-state bucket exist; assemble `DATABASE_URL`/`REDIS_URL` from outputs + RDS secret.
+- TD-06 Component tests for mobile (jest-expo or RNTL) and web/admin with the first real screens.
+- TD-07 Account export/deletion cascade design + `identity.account.deleted` handlers (Phase 01).
+- TD-08 EXIF/location metadata policy for evidence before any media is stored (Phase 05).
+
+### Should fix
+
+- TD-09 Upgrade ESLint 9 → 10 when `eslint-config-next` supports it (blocked: `react/display-name`
+  rule incompatible with ESLint 10 core API).
+- TD-10 Add `docs/ux` with the first UX deliverable; add cross-application E2E suite under `tests/`
+  when the first end-to-end flow (sign-up) exists.
+- TD-11 Confirm `me-central-1` service availability for each newly adopted managed service; revisit
+  ADR-008 triggers quarterly.
+- TD-12 Add `terraform validate` results from the first CI run to `PROGRESS.md` (sandbox could not
+  reach provider registries).
+- TD-13 Consider `PriceClass_All` for CloudFront if MENA edge coverage under `PriceClass_200` proves
+  insufficient (measure p95 from Amman/Riyadh/Dubai).
+
+### Nice to have
+
+- TD-14 Turborepo remote cache for CI speed.
+- TD-15 Renovate/Dependabot configuration for grouped dependency updates with Expo SDK awareness.
+- TD-16 `docs/architecture` diagrams exported as images for non-Mermaid viewers.

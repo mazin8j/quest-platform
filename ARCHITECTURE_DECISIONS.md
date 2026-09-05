@@ -1,14 +1,21 @@
 # Architecture Decision Index
 
-> **Status note (2026-09-04 audit):** the decisions below are *proposed in this index only*. **No ADR files exist yet** in `docs/adr/` (only `ADR_TEMPLATE.md`). Phase 00 must author ADR-001..ADR-008 using the template (Context / Decision / Alternatives Considered / Consequences / Revisit Triggers) before any are treated as Accepted. Do not rely on this table as evidence that a decision has been recorded.
+An ADR is listed as **Accepted** only when its file exists under `docs/adr/` with Status, Context,
+Decision, Alternatives Considered, Consequences and Revisit Triggers. Template: `docs/adr/ADR_TEMPLATE.md`.
 
-| ADR | Decision | Status | File |
-|---|---|---|---|
-| ADR-001 | Modular monolith first | Proposed (not yet written) | — |
-| ADR-002 | PostgreSQL + PostGIS + pgvector as initial primary data platform | Proposed (not yet written) | — |
-| ADR-003 | EventBridge + SQS for initial asynchronous integration | Proposed (not yet written) | — |
-| ADR-004 | Provider-independent AI Gateway | Proposed (not yet written) | — |
-| ADR-005 | Direct-to-object-storage media uploads | Proposed (not yet written) | — |
-| ADR-006 | React Native + Expo for mobile | Proposed (not yet written) | — |
-| ADR-007 | NestJS for backend API | Proposed (not yet written) | — |
-| ADR-008 | AWS single-region initial deployment (must record region choice, e.g. `me-central-1`, and data-residency rationale) | Proposed (not yet written) | — |
+| ADR     | Decision                                                                                                                  | Status                                                         | File                                                                                                       |
+| ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| ADR-001 | Modular monolith first                                                                                                    | Accepted (2026-09-04)                                          | [docs/adr/ADR-001-modular-monolith-first.md](docs/adr/ADR-001-modular-monolith-first.md)                   |
+| ADR-002 | PostgreSQL + PostGIS + pgvector as initial primary data platform                                                          | Accepted (2026-09-04)                                          | [docs/adr/ADR-002-postgresql-postgis-pgvector.md](docs/adr/ADR-002-postgresql-postgis-pgvector.md)         |
+| ADR-003 | EventBridge + SQS for initial asynchronous integration                                                                    | Accepted (2026-09-04)                                          | [docs/adr/ADR-003-eventbridge-sqs-messaging.md](docs/adr/ADR-003-eventbridge-sqs-messaging.md)             |
+| ADR-004 | Provider-independent AI Gateway                                                                                           | Accepted (2026-09-04)                                          | [docs/adr/ADR-004-provider-independent-ai-gateway.md](docs/adr/ADR-004-provider-independent-ai-gateway.md) |
+| ADR-005 | Direct-to-object-storage media uploads                                                                                    | Accepted (2026-09-04)                                          | [docs/adr/ADR-005-direct-to-object-storage-media.md](docs/adr/ADR-005-direct-to-object-storage-media.md)   |
+| ADR-006 | React Native + Expo for mobile                                                                                            | Accepted (2026-09-04)                                          | [docs/adr/ADR-006-react-native-expo-mobile.md](docs/adr/ADR-006-react-native-expo-mobile.md)               |
+| ADR-007 | NestJS for backend API (zod contract-first validation)                                                                    | Accepted (2026-09-04)                                          | [docs/adr/ADR-007-nestjs-backend.md](docs/adr/ADR-007-nestjs-backend.md)                                   |
+| ADR-008 | AWS single-region initial deployment — me-central-1 (UAE), Bahrain evaluated                                              | Accepted (2026-09-04), assumptions + revisit triggers recorded | [docs/adr/ADR-008-aws-initial-region.md](docs/adr/ADR-008-aws-initial-region.md)                           |
+| ADR-009 | Monorepo tooling: pnpm, Turborepo, TS 5, ESLint 9, Prettier, Vitest, dependency-cruiser, zod; `@quest/api-client` package | Accepted (2026-09-04)                                          | [docs/adr/ADR-009-monorepo-tooling.md](docs/adr/ADR-009-monorepo-tooling.md)                               |
+| ADR-010 | Drizzle ORM with hand-authored SQL migrations                                                                             | Accepted (2026-09-04)                                          | [docs/adr/ADR-010-drizzle-sql-migrations.md](docs/adr/ADR-010-drizzle-sql-migrations.md)                   |
+
+Pending decisions (need an ADR before implementation): identity provider strategy and token model
+(Phase 01), transactional outbox mechanism (first cross-process consumer), OpenAPI generation
+approach (Phase 01), Redis-backed rate-limit storage (when replicas > 1).

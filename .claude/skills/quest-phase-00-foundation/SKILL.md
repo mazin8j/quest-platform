@@ -7,15 +7,16 @@ disable-model-invocation: true
 # QUEST Phase 00 — Foundation & Architecture
 
 Before starting:
+
 1. Read `CLAUDE.md`, `PROGRESS.md`, `BACKLOG.md`, `ARCHITECTURE_DECISIONS.md`, relevant ADRs and all files affected by this phase.
 2. Confirm the previous phase exit gates from repository evidence; do not rely only on prose claims.
 3. Use relevant project subagents and reusable skills. Keep specialist exploration out of the main context when it is large.
 4. Work in small increments and run tests continuously.
 
-
 Goal: create the implementation-ready project foundation without feature development.
 
 Required work:
+
 - Read CLAUDE.md, roadmap, backlog and target architecture.
 - Invoke/use chief-architect, security-architect, trust-safety-architect, data-architect, devops-engineer and qa-engineer perspectives.
 - Create the monorepo skeleton for apps/mobile, apps/web, apps/admin, apps/api, shared packages, infrastructure and tests.
@@ -31,6 +32,7 @@ Required work:
 - Update PROGRESS.md and ARCHITECTURE_DECISIONS.md.
 
 Exit gates:
+
 - repository installs/builds cleanly
 - local services can be started reproducibly
 - tests have a working baseline
@@ -39,7 +41,18 @@ Exit gates:
 
 At completion, provide: files created/changed, decisions made, commands to verify locally, open risks, and recommendation whether Phase 01 may start.
 
+## Entry conditions
+
+- This is the first phase: the repository contains the Claude Development Pack and no prior phase is required.
+- Read `CLAUDE.md`, `PROGRESS.md`, `BACKLOG.md`, `ARCHITECTURE_DECISIONS.md`, relevant ADRs and `docs/architecture/` before changing anything.
+
+## Exit conditions (all required)
+
+- repository installs/builds cleanly (`pnpm verify`); local services start reproducibly (`docker compose`); tests have a working baseline; no feature/business implementation added; ADR-001..010 exist; architecture/security/safety docs describe the implementation; independent phase-gate audit run against these gates.
+- Mandatory closeout below completed; `PROGRESS.md` updated; the next phase is NOT started automatically.
+
 ## Mandatory closeout
+
 - Run relevant typecheck/lint/tests/build and record results.
 - Perform code review plus security/privacy/safety review appropriate to the phase.
 - Update `PROGRESS.md`, `BACKLOG.md`, architecture/API/data docs and ADR index as applicable.

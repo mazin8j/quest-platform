@@ -1,0 +1,123 @@
+/* Token values mirror @quest/ui (packages/ui/src/tokens.ts). Keep names aligned. */
+:root {
+  --q-bg: #ffffff;
+  --q-surface: #f7f8fa;
+  --q-border: #eef0f3;
+  --q-text: #14181f;
+  --q-text-2: #5f6877;
+  --q-primary: #2f5bff;
+  --q-primary-pressed: #1f45d6;
+  --q-on-primary: #ffffff;
+  --q-danger: #d9342b;
+  --q-success: #1f9d55;
+  --q-radius: 10px;
+  --q-space: 16px;
+  --q-font: Inter, 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --q-bg: #14181f;
+    --q-surface: #1b2029;
+    --q-border: #2c3340;
+    --q-text: #ffffff;
+    --q-text-2: #c9ced6;
+    --q-primary: #5c82ff;
+    --q-primary-pressed: #2f5bff;
+    --q-on-primary: #14181f;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--q-bg);
+  color: var(--q-text);
+  font-family: var(--q-font);
+  line-height: 1.45;
+}
+a {
+  color: var(--q-primary);
+}
+:focus-visible {
+  outline: 2px solid var(--q-primary);
+  outline-offset: 2px;
+}
+
+.q-container {
+  width: 100%;
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: calc(var(--q-space) * 1.5) var(--q-space);
+}
+.q-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space);
+  padding: var(--q-space);
+  border-bottom: 1px solid var(--q-border);
+}
+.q-brand {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  color: var(--q-text);
+}
+.q-nav {
+  display: flex;
+  gap: var(--q-space);
+  flex-wrap: wrap;
+}
+.q-card {
+  background: var(--q-surface);
+  border: 1px solid var(--q-border);
+  border-radius: var(--q-radius);
+  padding: var(--q-space);
+}
+.q-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--q-space);
+}
+@media (min-width: 768px) {
+  .q-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.q-muted {
+  color: var(--q-text-2);
+}
+.q-status-up {
+  color: var(--q-success);
+  font-weight: 600;
+}
+.q-status-down {
+  color: var(--q-danger);
+  font-weight: 600;
+}
+.q-button {
+  display: inline-block;
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--q-primary);
+  color: var(--q-on-primary);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.q-button:hover {
+  background: var(--q-primary-pressed);
+}
+.q-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

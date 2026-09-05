@@ -1,0 +1,24 @@
+{
+  "name": "@quest/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared design tokens (color, spacing, typography, radii, motion) consumed by mobile, web and admin. Platform-neutral: no React components here until a cross-platform strategy is decided.",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  }
+}

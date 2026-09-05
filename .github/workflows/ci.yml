@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+  EXPO_NO_TELEMETRY: 1
+
+jobs:
+  # ---------- Static quality gates (mandatory) ----------
+  quality:
+    name: Format · Lint · Typecheck · Dependency rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm deps:check
+
+  # ---------- Unit tests + builds (mandatory) ----------
+  test-build:
+    name: Unit tests · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - name: Mobile bundles through Metro
+        run: pnpm --filter @quest/mobile exec expo export --platform android --output-dir /tmp/expo-out
+        env:
+          CI: 1
+
+  # ---------- Database migrations against real PostGIS + pgvector (mandatory) ----------
+  migrations:
+    name: Migrations · Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start PostgreSQL (PostGIS + pgvector) and Redis
+        run: docker compose up -d --wait postgres redis
+      - name: Migration status on clean database (must report pending)
+        run: '! pnpm db:migrate:status'
+        env:
+          DATABASE_URL: postgresql://quest:quest@localhost:5432/quest
+      - name: Apply migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://quest:quest@localhost:5432/quest
+      - name: Migration status after apply (must be clean) and idempotent re-run
+        run: pnpm db:migrate:status && pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://quest:quest@localhost:5432/quest
+      - name: Integration tests
+        run: pnpm --filter @quest/api test:integration
+        env:
+          RUN_INTEGRATION: 'true'
+          DATABASE_URL: postgresql://quest:quest@localhost:5432/quest
+          REDIS_URL: redis://localhost:6379
+      - if: always()
+        run: docker compose down -v
+
+  # ---------- Infrastructure configuration (mandatory) ----------
+  infrastructure:
+    name: Compose config · Terraform fmt/validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+      - run: terraform fmt -recursive -check
+        working-directory: infrastructure/terraform
+      - name: Validate every module
+        working-directory: infrastructure/terraform
+        run: |
+          set -e
+          for d in modules/*/; do
+            echo "== $d"; (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate)
+          done
+      - name: Validate dev environment
+        working-directory: infrastructure/terraform/environments/dev
+        run: terraform init -backend=false -input=false >/dev/null && terraform validate
+
+  # ---------- Security (mandatory) ----------
+  security:
+    name: Secret scan · Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan (verified secrets fail the build)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency vulnerability audit (high+ fails)
+        run: pnpm audit --audit-level=high

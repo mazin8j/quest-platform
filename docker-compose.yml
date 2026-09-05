@@ -1,0 +1,83 @@
+# QUEST local development infrastructure. Application processes run on the host (pnpm dev).
+# Start:  pnpm infra:up   (= docker compose up -d --wait)   Stop: pnpm infra:down
+# Credentials below are local-only defaults and match .env.example. Never reuse them anywhere else.
+name: quest
+
+services:
+  postgres:
+    build: ./infrastructure/docker/postgres
+    image: quest/postgres:16-postgis-pgvector
+    environment:
+      POSTGRES_USER: quest
+      POSTGRES_PASSWORD: quest
+      POSTGRES_DB: quest
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U quest -d quest']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        'redis-server',
+        '--save',
+        '',
+        '--appendonly',
+        'no',
+        '--maxmemory',
+        '256mb',
+        '--maxmemory-policy',
+        'allkeys-lru',
+      ]
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: quest-local
+      MINIO_ROOT_PASSWORD: quest-local-secret
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # One-shot: creates the local media bucket so the API's readiness probe is green out of the box.
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 quest-local quest-local-secret &&
+      mc mb --ignore-existing local/quest-media-local &&
+      echo 'bucket ready'"
+    restart: 'no'
+
+volumes:
+  postgres-data:
+  minio-data:

@@ -7,11 +7,11 @@ disable-model-invocation: true
 # QUEST Phase 15 — Analytics & Growth Intelligence
 
 Before starting:
+
 1. Read `CLAUDE.md`, `PROGRESS.md`, `BACKLOG.md`, `ARCHITECTURE_DECISIONS.md`, relevant ADRs and all files affected by this phase.
 2. Confirm the previous phase exit gates from repository evidence; do not rely only on prose claims.
 3. Use relevant project subagents and reusable skills. Keep specialist exploration out of the main context when it is large.
 4. Work in small increments and run tests continuously.
-
 
 Build a governed event taxonomy and growth analytics layer.
 
@@ -19,7 +19,19 @@ Define canonical events for onboarding, impression, accept, start, evidence, ver
 
 Primary product metrics: acceptance, completion, verified completion, D1/D7/D30 participant retention, invites per completing user, invite activation. Guardrails include safety reports, proof fraud, false moderation, crashes and critical-flow latency.
 
+## Entry conditions
+
+- Phase 14 has passed an independent phase-gate audit (`docs/governance/PHASE_GATE_AUDIT_*.md` with PASS or PASS WITH CONDITIONS) and `PROGRESS.md` records it.
+- `pnpm verify` is green on the current baseline and the working tree is committed.
+- Read `CLAUDE.md`, `PROGRESS.md`, `BACKLOG.md`, `ARCHITECTURE_DECISIONS.md`, relevant ADRs and `docs/architecture/` before changing anything.
+
+## Exit conditions (all required)
+
+- governed analytics taxonomy with schemas/versioning, consent/privacy handling, retention, warehouse export boundary, dashboards, funnels, cohorts and experiment assignment exist; primary and guardrail metrics reported.
+- Mandatory closeout below completed; `PROGRESS.md` updated; the next phase is NOT started automatically.
+
 ## Mandatory closeout
+
 - Run relevant typecheck/lint/tests/build and record results.
 - Perform code review plus security/privacy/safety review appropriate to the phase.
 - Update `PROGRESS.md`, `BACKLOG.md`, architecture/API/data docs and ADR index as applicable.

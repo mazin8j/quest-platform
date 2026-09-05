@@ -1,9 +1,11 @@
 # QUEST MVP Scope
 
 ## Objective
+
 Validate whether users repeatedly accept, complete, verify, share, and invite others into real-world or digital Quests.
 
 ## MVP Experiences
+
 - Onboard and choose interests
 - Discover a personalized Quest feed
 - Create a safe Quest
@@ -16,7 +18,9 @@ Validate whether users repeatedly accept, complete, verify, share, and invite ot
 - Report unsafe content
 
 ## MVP Success Metrics
+
 Primary:
+
 - Quest acceptance rate
 - accepted-to-completed rate
 - verified completion rate
@@ -25,6 +29,7 @@ Primary:
 - invite-to-activation conversion
 
 Guardrails:
+
 - safety report rate
 - false-positive moderation rate
 - proof fraud rate

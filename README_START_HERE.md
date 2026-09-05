@@ -3,6 +3,7 @@
 This pack is designed to be copied into the root of a new QUEST repository.
 
 ## Recommended project location
+
 Example on Windows:
 
 `C:\QUEST`
@@ -10,6 +11,7 @@ Example on Windows:
 Copy the contents of this pack into that folder, open a terminal there, then launch Claude Code.
 
 ## First Claude command
+
 Run:
 
 `/quest-phase-00-foundation`
@@ -17,6 +19,7 @@ Run:
 Do not begin feature implementation before Phase 00 closes its architecture and foundation gates.
 
 ## Phase command sequence
+
 1. `/quest-phase-00-foundation`
 2. `/quest-phase-01-identity`
 3. `/quest-phase-02-quest-core`
@@ -36,12 +39,15 @@ Do not begin feature implementation before Phase 00 closes its architecture and 
 17. `/quest-phase-16-global-scale`
 
 ## Important operating rule
+
 Do not ask Claude to “build the entire app.” Invoke one phase, review its output, run tests, and only then move to the next phase.
 
 ## Model strategy
+
 Use a strong reasoning/coding model for architecture, cross-domain refactors, security design, AI evaluation, and difficult debugging. Use a faster/lower-cost model for bounded repetitive tasks where quality gates and tests are already well defined. Keep model selection configurable rather than hard-coded into application code.
 
 ## What this pack contains
+
 - Project constitution (`CLAUDE.md`)
 - 13 project subagents
 - Reusable engineering skills

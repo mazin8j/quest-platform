@@ -1,14 +1,58 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+coverage/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+ios/
+android/
+
+# Environment & secrets (keep the committed example)
 .env
 .env.*
 !.env.example
-.DS_Store
-coverage/
-dist/
-.next/
-.expo/
+
+# Logs
 *.log
-CLAUDE.local.md
+npm-debug.log*
+pnpm-debug.log*
+
+# Terraform
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Local data volumes (docker compose bind mounts, if any)
+.data/
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude local overrides
+CLAUDE.local.md

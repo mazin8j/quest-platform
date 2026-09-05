@@ -1,0 +1,49 @@
+{
+  "name": "quest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "QUEST — AI-native global social participation network (monorepo)",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.0.0 <23",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "deps:check": "depcruise --config .dependency-cruiser.cjs apps packages",
+    "db:migrate": "pnpm --filter @quest/api db:migrate",
+    "db:migrate:status": "pnpm --filter @quest/api db:migrate:status",
+    "db:reset:dev": "pnpm --filter @quest/api db:reset:dev",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "infra:config": "docker compose config --quiet",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm deps:check && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.18.0",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.0.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild",
+      "unrs-resolver"
+    ]
+  }
+}

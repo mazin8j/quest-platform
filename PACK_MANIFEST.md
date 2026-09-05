@@ -1,4 +1,6 @@
-# QUEST Pack Manifest
+# QUEST Claude Development Pack manifest
+
+Governance/orchestration files (the application code lives under `apps/`, `packages/`, `infrastructure/` — see `README_START_HERE.md`).
 
 - `.claude/agents/ai-architect.md`
 - `.claude/agents/backend-engineer.md`
@@ -42,8 +44,6 @@
 - `.claude/skills/quest-safety/SKILL.md`
 - `.claude/skills/recommendation-ranking/SKILL.md`
 - `.claude/skills/release-gate/SKILL.md`
-- `.env.example`
-- `.gitignore`
 - `ARCHITECTURE_DECISIONS.md`
 - `BACKLOG.md`
 - `CLAUDE.md`
@@ -51,8 +51,7 @@
 - `PROGRESS.md`
 - `README_START_HERE.md`
 - `docs/adr/ADR_TEMPLATE.md`
-- `docs/architecture/QUEST_TARGET_ARCHITECTURE.md`
+- `docs/governance/PHASE_GATE_AUDIT_2026-09-04.md`
 - `docs/governance/QUALITY_GATES.md`
 - `docs/product/MVP_SCOPE.md`
 - `docs/roadmap/PHASE_PLAN.md`
-- `scripts/bootstrap-directories.ps1`

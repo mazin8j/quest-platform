@@ -1,0 +1,35 @@
+{
+  "name": "@quest/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "QUEST mobile app (React Native + Expo + expo-router) — Phase 00 foundation.",
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint app src",
+    "test": "vitest run",
+    "doctor": "expo install --check"
+  },
+  "dependencies": {
+    "@quest/api-client": "workspace:*",
+    "@quest/types": "workspace:*",
+    "@quest/ui": "workspace:*",
+    "expo": "^57.0.20",
+    "expo-constants": "~57.0.17",
+    "expo-linking": "~57.0.9",
+    "expo-router": "~57.0.19",
+    "expo-secure-store": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18"
+  }
+}
