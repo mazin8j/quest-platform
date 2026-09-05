@@ -81,6 +81,11 @@
 
 ### Nice to have
 
+- TD-20 Pin GitHub Actions to full commit SHAs (with version comments) via Dependabot/Renovate-managed
+  updates once the repository's supply-chain policy formally requires it; today the convention is
+  release tags (`checkout@v6`, `setup-node@v7`, `pnpm/action-setup@v6`, `setup-terraform@v4`,
+  `trufflehog@v3.97.4`).
+
 - TD-14 Turborepo remote cache for CI speed.
 - TD-15 Renovate/Dependabot configuration for grouped dependency updates with Expo SDK awareness.
 - TD-16 `docs/architecture` diagrams exported as images for non-Mermaid viewers.

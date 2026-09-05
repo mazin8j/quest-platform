@@ -11,6 +11,7 @@ modules/
   elasticache-redis/  Redis 7 (TLS + at-rest encryption, LRU eviction — cache only)
   s3-media/           Private media bucket (SSE, versioning, CORS for pre-signed PUT, lifecycle, TLS-only policy)
   cdn-waf/            CloudFront (media via OAC + API path) with WAFv2 managed rules + rate limit
+                      (needs provider alias aws.us_east_1 → validated via examples/validate, not standalone)
   messaging/          EventBridge bus + archive, SQS consumer queues with DLQs and alarms
   secrets/            Secrets Manager containers (values never in Terraform)
   observability/      Log group, 5xx metric filter/alarm, RDS alarms, SNS alerts topic

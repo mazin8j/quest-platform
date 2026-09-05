@@ -25,9 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -43,9 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -63,9 +63,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -93,25 +93,54 @@ jobs:
       - if: always()
         run: docker compose down -v
 
-  # ---------- Infrastructure configuration (mandatory) ----------
-  infrastructure:
-    name: Compose config · Terraform fmt/validate
+  # ---------- Local infrastructure configuration (mandatory) ----------
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+  # ---------- Terraform (mandatory) ----------
+  terraform:
+    name: Terraform fmt · validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
     steps:
-      - uses: actions/checkout@v4
-      - run: docker compose config --quiet
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: '1.9.8'
-      - run: terraform fmt -recursive -check
-        working-directory: infrastructure/terraform
+      - name: Format check
+        run: terraform fmt -recursive -check
       - name: Validate every module
-        working-directory: infrastructure/terraform
+        # A module that declares `configuration_aliases` (needs a provider alias passed in by its
+        # caller) cannot be validated as a root module; it is validated through its examples/*
+        # root(s) instead, which supply the provider configurations exactly as environments/dev does.
         run: |
-          set -e
+          set -euo pipefail
           for d in modules/*/; do
-            echo "== $d"; (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate)
+            if grep -qs 'configuration_aliases' "$d"*.tf; then
+              found=0
+              for ex in "$d"examples/*/; do
+                [ -d "$ex" ] || continue
+                found=1
+                echo "== $ex (alias-dependent module ${d} validated through its example root)"
+                (cd "$ex" && terraform init -backend=false -input=false >/dev/null && terraform validate)
+              done
+              if [ "$found" -eq 0 ]; then
+                echo "::error::${d} declares configuration_aliases but has no examples/*/ root to validate it"
+                exit 1
+              fi
+            else
+              echo "== $d"
+              (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate)
+            fi
           done
       - name: Validate dev environment
         working-directory: infrastructure/terraform/environments/dev
@@ -123,15 +152,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Secret scan (verified secrets fail the build)
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.97.4
         with:
           extra_args: --only-verified
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
