@@ -76,23 +76,25 @@ new independent audit can authorize it.
 
 ## Validations blocked (honest status)
 
-| Check                              | Status                               | Reason / unblock                                                                                                                                                                                                                                                                            |
-| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docker compose up --wait` runtime | **LOCAL RUNTIME VALIDATION BLOCKED** | No Docker daemon in the build sandbox; **BLOCKED_BY_LOCAL_PREREQUISITE: Docker Desktop** on the developer machine. Compose config validated; the same services were exercised via a native PostgreSQL 16 install for migration validation. CI job `migrations` runs the real compose stack. |
-| `terraform validate` / `init`      | **BLOCKED (network policy)**         | Provider registries (registry.terraform.io / registry.opentofu.org / releases.hashicorp.com) are unreachable from the sandbox. `fmt` and full HCL parsing passed; CI job `infrastructure` runs `terraform validate` for every module and the dev environment.                               |
-| `expo install --check` (online)    | BLOCKED (network policy)             | Replaced by an offline comparison against `expo/bundledNativeModules.json` — all managed deps aligned.                                                                                                                                                                                      |
-| Git baseline commit                | Pending on the developer machine     | See "Next Actions".                                                                                                                                                                                                                                                                         |
+| Check                                                   | Status                                              | Reason / unblock                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker compose up --wait` runtime                      | **LOCAL RUNTIME VALIDATION BLOCKED**                | No Docker daemon in the build sandbox; **BLOCKED_BY_LOCAL_PREREQUISITE: Docker Desktop** on the developer machine. Compose config validated; the same services were exercised via a native PostgreSQL 16 install for migration validation. CI job `migrations` runs the real compose stack.                                           |
+| `terraform validate` / `init`                           | **BLOCKED (network policy)**                        | Provider registries (registry.terraform.io / registry.opentofu.org / releases.hashicorp.com) are unreachable from the sandbox. `fmt` and full HCL parsing passed; CI job `infrastructure` runs `terraform validate` for every module and the dev environment.                                                                         |
+| `pnpm install` + `pnpm verify` on the developer machine | **LOCAL RUNTIME VALIDATION BLOCKED (this session)** | The Claude desktop VM linked to `C:\Quest` has no network egress for npm, so dependencies could not be installed there; every check above was executed on the identical tree in the cloud workspace. Run `corepack enable && pnpm install --frozen-lockfile && pnpm verify` in a Windows terminal in `C:\Quest` to reproduce locally. |
+| `expo install --check` (online)                         | BLOCKED (network policy)                            | Replaced by an offline comparison against `expo/bundledNativeModules.json` — all managed deps aligned.                                                                                                                                                                                                                                |
 
 ## Remaining P0 / P1 blockers
 
-- None known at implementation level. Items requiring the developer machine: git baseline commit,
-  Docker Desktop for local runtime, running CI once on GitHub to confirm `terraform validate`.
+- None known at implementation level. Git: Phase 00 is committed on `main` in `C:\Quest`
+  (`15ae00c`, on top of the pack baseline `9a98361`; working tree clean). Items requiring the
+  developer machine: `pnpm install` + `pnpm verify` locally, Docker Desktop for local runtime,
+  pushing to GitHub and running CI once to confirm `terraform validate`.
 
 ## Next Actions
 
-1. On the developer machine: `git add -A && git commit -m "Phase 00: foundation & architecture"`
-   (set `git config user.name/user.email` first if unset), push to GitHub, confirm CI is green.
-2. Install Docker Desktop; run `pnpm infra:up && pnpm db:migrate && pnpm verify`.
+1. In a Windows terminal in `C:\Quest`: `corepack enable && pnpm install --frozen-lockfile && pnpm verify`;
+   push `main` to GitHub and confirm the CI workflow is green (including `terraform validate`).
+2. Install Docker Desktop; run `pnpm infra:up && pnpm db:migrate && pnpm db:migrate:status`.
 3. Run the independent phase-gate audit against the Phase 00 exit conditions in
    `.claude/skills/quest-phase-00-foundation/SKILL.md`.
 4. Only if the audit returns PASS / PASS WITH CONDITIONS: invoke `/quest-phase-01-identity`.
