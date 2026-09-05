@@ -2,6 +2,19 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+# Native build scripts allowed to run (pnpm 10 blocks all others by default).
+# @swc/core and unrs-resolver only verify their prebuilt bindings; esbuild installs its binary.
 onlyBuiltDependencies:
+  - '@swc/core'
   - esbuild
-  - sharp
+  - unrs-resolver
+
+# Documented risk acceptances for `pnpm audit --audit-level=high` (CI security gate).
+# Re-review on 2026-12-01 or when Expo SDK 58 lands — see BACKLOG.md TD-17.
+#   GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq: image-size <=2.0.2 DoS in ICNS/JXL/HEIF parsers.
+#   Reached only through expo → @expo/cli → Metro dev tooling (local bundling of our own assets);
+#   not in the API, web or admin runtime; no patched version published upstream.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq

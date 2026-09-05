@@ -58,6 +58,16 @@
 
 ### Should fix
 
+- TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
+  GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via
+  Expo/Metro dev tooling, no upstream patch. Re-evaluate at Expo SDK 58 or by the expiry date; remove
+  the ignore as soon as a patched transitive version ships.
+- TD-18 Web/admin CSP `connect-src` omits the API origin when `NEXT_PUBLIC_API_BASE_URL` is unset at
+  build time (env module defaults to localhost:4000). Harmless while all API calls are server-side;
+  align before the first client-side fetch.
+- TD-19 Rate-limit envelope message carries the framework prefix (`ThrottlerException: …`); map to a
+  contract message and assert `retry-after` in the rate-limit test.
+
 - TD-09 Upgrade ESLint 9 → 10 when `eslint-config-next` supports it (blocked: `react/display-name`
   rule incompatible with ESLint 10 core API).
 - TD-10 Add `docs/ux` with the first UX deliverable; add cross-application E2E suite under `tests/`

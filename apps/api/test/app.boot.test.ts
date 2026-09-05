@@ -96,9 +96,13 @@ describe('API boot & foundation contracts', () => {
     const res = await request(server())
       .post('/v1/system/info')
       .set('content-type', 'application/json')
+      .set('x-correlation-id', 'journey-oversize-01')
       .send({ blob: 'x'.repeat(300 * 1024) });
-    expect([404, 413]).toContain(res.status);
+    expect(res.status).toBe(413);
     expect(isApiErrorEnvelope(res.body)).toBe(true);
+    // Early failures (before routing) must still carry the request/correlation ids.
+    expect(apiErrorEnvelopeSchema.parse(res.body).error.correlationId).toBe('journey-oversize-01');
+    expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 

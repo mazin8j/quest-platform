@@ -89,6 +89,17 @@ describe('global validation & error handling', () => {
     expect(paths).toEqual(['age', 'name']);
   });
 
+  it('renders malformed JSON as VALIDATION_ERROR with the contract message', async () => {
+    const res = await request(server())
+      .post('/v1/test-echo')
+      .set('content-type', 'application/json')
+      .send('{bad json')
+      .expect(400);
+    const err = apiErrorEnvelopeSchema.parse(res.body).error;
+    expect(err.code).toBe('VALIDATION_ERROR');
+    expect(err.message).toBe('Malformed request body');
+  });
+
   it('maps typed ApiError to its code and status', async () => {
     const res = await request(server()).post('/v1/test-echo/conflict').expect(409);
     expect(apiErrorEnvelopeSchema.parse(res.body).error).toMatchObject({

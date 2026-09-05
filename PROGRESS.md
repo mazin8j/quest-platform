@@ -6,7 +6,13 @@ Phase 00 — Foundation & Architecture
 
 ## Status
 
-**Implemented — awaiting independent phase-gate audit.** Phase 00 was executed on 2026-09-04
+**Independent phase-gate audit 2026-09-05: PASS WITH CONDITIONS** (see
+`docs/governance/PHASE_GATE_AUDIT_2026-09-05.md`). Audit-time repairs: CI security gate risk
+acceptance (TD-17), request-context middleware now precedes body parsing/logging (413/400 envelopes
+and log lines carry ids), malformed-JSON contract message, build-script allow-list, stray report
+moved to `docs/governance/`. Conditions C1–C3 in the audit must be satisfied at the start of Phase 01.
+
+**Implemented — Phase 00 complete.** Phase 00 was executed on 2026-09-04
 following the audit in `docs/governance/PHASE_GATE_AUDIT_2026-09-04.md` (which recorded FAIL /
 14/100 because the phase had never been run). Phase 01 is **not** authorized by this file; only a
 new independent audit can authorize it.
@@ -62,7 +68,7 @@ new independent audit can authorize it.
 | `pnpm lint` (all workspaces, type-aware)                                                                                    | PASS                                                                                                                                                                    |
 | `pnpm typecheck` (all workspaces)                                                                                           | PASS                                                                                                                                                                    |
 | `pnpm deps:check` (dependency-cruiser)                                                                                      | PASS — 0 violations                                                                                                                                                     |
-| `pnpm test` (unit)                                                                                                          | PASS — 89 unit tests across 11 workspaces (api 30, types 17, ai 9, events 7, config 5, api-client 5, ui 4, admin 4, mobile 4, analytics 3, web 1) + 4 integration tests |
+| `pnpm test` (unit)                                                                                                          | PASS — 90 unit tests across 11 workspaces (api 31, types 17, ai 9, events 7, config 5, api-client 5, ui 4, admin 4, mobile 4, analytics 3, web 1) + 4 integration tests |
 | `pnpm build` (packages, api, web, admin)                                                                                    | PASS                                                                                                                                                                    |
 | Mobile Metro bundle (`expo export --platform android`)                                                                      | PASS — Hermes bundle produced                                                                                                                                           |
 | API boots (`node dist/main.js`) and serves `/health`, `/ready`, `/v1/system/info`, 404 envelope                             | PASS; fail-fast on invalid env verified                                                                                                                                 |

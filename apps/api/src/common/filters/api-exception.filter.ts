@@ -85,6 +85,8 @@ export class ApiExceptionFilter implements ExceptionFilter {
           ? body
           : ((body as { message?: string | string[] }).message?.toString() ?? exception.message);
       if (status >= 500) message = 'Internal server error';
+      // Nest maps body-parser SyntaxErrors to BadRequestException(parserMessage); keep the contract message.
+      if (status === 400 && /JSON/.test(message)) message = 'Malformed request body';
     } else if (isClientErrorLike(exception)) {
       // Express/body-parser errors (entity.too.large, entity.parse.failed, charset.unsupported…)
       status = exception.status;

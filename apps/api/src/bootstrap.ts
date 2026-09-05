@@ -1,10 +1,12 @@
 import { type INestApplication, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
+import { RequestContextMiddleware } from './common/context/request-context.middleware';
 import { APP_CONFIG, type AppConfig } from './config/app-config';
 
 /**
@@ -16,6 +18,11 @@ export function configureApp(app: NestExpressApplication): INestApplication {
 
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
+
+  // Request/correlation ids must exist before ANY other middleware runs (body parsers, pino-http,
+  // helmet) so early failures such as 413/400 and every log line carry them.
+  const requestContext = new RequestContextMiddleware();
+  app.use((req: Request, res: Response, next: NextFunction) => requestContext.use(req, res, next));
   // Behind CloudFront/ALB in AWS; trust the first proxy hop for client IP (rate limiting).
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
