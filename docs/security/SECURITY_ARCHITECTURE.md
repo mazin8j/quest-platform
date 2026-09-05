@@ -68,7 +68,10 @@ policy defined in Phase 05 before any evidence is stored.
 
 ## Dependency & secret scanning
 
-CI: `pnpm audit --audit-level=high` fails the build; TruffleHog scans history for verified secrets;
+CI: `pnpm audit --audit-level=high` fails the build. Exceptions are allowed only through
+`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, each with a comment stating reachability
+(runtime vs dev tooling), the absence of a patched version, and an expiry date tracked in
+`BACKLOG.md` (currently TD-17). TruffleHog scans history for verified secrets;
 `pnpm install --frozen-lockfile` prevents drift; hoisted layout mitigated by dependency-cruiser and
 explicit `dependencies`.
 
