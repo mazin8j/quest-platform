@@ -49,6 +49,25 @@ module.exports = {
       to: { path: '^apps/api/src/modules/identity/' },
     },
     {
+      name: 'profiles-must-not-read-identity-tables',
+      severity: 'error',
+      comment:
+        'The persistence boundary is part of the context boundary: Profiles must not reach the ' +
+        'Identity tables through the shared Drizzle schema barrel (audit P01-13). Identity data ' +
+        'reaches Profiles only through the ports Identity calls.',
+      from: { path: '^apps/api/src/modules/profiles/' },
+      to: { path: '^apps/api/src/infrastructure/database/schema/(index|identity)\\.ts$' },
+    },
+    {
+      name: 'identity-must-not-read-profile-tables',
+      severity: 'error',
+      comment:
+        'The mirror rule: Identity owns no profile table and must use ProfileProvisioningPort / ' +
+        'ProfileQueryPort instead of querying them (audit P01-13).',
+      from: { path: '^apps/api/src/modules/identity/' },
+      to: { path: '^apps/api/src/infrastructure/database/schema/(index|profiles)\\.ts$' },
+    },
+    {
       name: 'api-modules-must-not-import-app-root',
       severity: 'error',
       comment: 'Modules must not depend on the composition root (app.module / main).',
