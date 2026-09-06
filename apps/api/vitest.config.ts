@@ -15,7 +15,7 @@ export default defineConfig({
           name: 'unit',
           environment: 'node',
           include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
-          exclude: ['test/integration/**'],
+          exclude: ['test/integration/**', 'test/e2e/**'],
           setupFiles: ['test/setup.ts'],
         },
       },
@@ -24,7 +24,7 @@ export default defineConfig({
         test: {
           name: 'integration',
           environment: 'node',
-          include: ['test/integration/**/*.int.test.ts'],
+          include: ['test/integration/**/*.int.test.ts', 'test/e2e/**/*.e2e.test.ts'],
           setupFiles: ['test/setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,

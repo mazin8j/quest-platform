@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { AppModule } from '../src/app.module';
+import { Public } from '../src/common/auth/decorators';
 import { configureApp } from '../src/bootstrap';
 import { ApiError } from '../src/common/filters/api-error';
 import { ZodValidationPipe } from '../src/common/pipes/zod-validation.pipe';
@@ -17,8 +18,13 @@ import { REDIS } from '../src/infrastructure/redis/redis.module';
 const echoSchema = z.object({ name: z.string().min(2), age: z.number().int().min(13) });
 type Echo = z.infer<typeof echoSchema>;
 
-/** Test-only controller proving the validation pipe + error filter contract end to end. */
+/**
+ * Test-only controller proving the validation pipe + error filter contract end to end.
+ * Marked @Public because every route is authenticated by default (Phase 01 AuthGuard); the
+ * `secret` route below is deliberately left unmarked to prove default deny.
+ */
 @Controller({ path: 'test-echo', version: '1' })
+@Public()
 class EchoController {
   @Post()
   echo(@Body(new ZodValidationPipe(echoSchema)) body: Echo): Echo {
@@ -36,7 +42,15 @@ class EchoController {
   }
 }
 
-@Module({ controllers: [EchoController] })
+@Controller({ path: 'test-secret', version: '1' })
+class SecretController {
+  @Post()
+  secret(): { ok: true } {
+    return { ok: true };
+  }
+}
+
+@Module({ controllers: [EchoController, SecretController] })
 class EchoTestModule {}
 
 describe('global validation & error handling', () => {
@@ -113,5 +127,18 @@ describe('global validation & error handling', () => {
     expect(apiErrorEnvelopeSchema.parse(res.body).error.code).toBe('INTERNAL_ERROR');
     expect(JSON.stringify(res.body)).not.toContain('hunter2');
     expect(JSON.stringify(res.body)).not.toContain('stack');
+  });
+
+  it('denies unauthenticated access to any route not marked @Public (default deny)', async () => {
+    const res = await request(app.getHttpServer() as Parameters<typeof request>[0])
+      .post('/v1/test-secret')
+      .send({});
+    expect(res.status).toBe(401);
+    expect(apiErrorEnvelopeSchema.parse(res.body).error.code).toBe('UNAUTHENTICATED');
+    const garbage = await request(app.getHttpServer() as Parameters<typeof request>[0])
+      .post('/v1/test-secret')
+      .set('authorization', 'Bearer not-a-real-token-at-all')
+      .send({});
+    expect(garbage.status).toBe(401);
   });
 });

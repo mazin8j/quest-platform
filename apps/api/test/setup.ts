@@ -12,3 +12,6 @@ process.env.S3_ACCESS_KEY_ID ??= 'test';
 process.env.S3_SECRET_ACCESS_KEY ??= 'test';
 process.env.S3_FORCE_PATH_STYLE ??= 'true';
 process.env.CORS_ALLOWED_ORIGINS ??= 'http://localhost:3000';
+process.env.AUTH_JWT_SECRET ??= 'unit-test-only-secret-0123456789abcdef0123456789';
+process.env.AUTH_FAKE_PROVIDER_ENABLED ??= 'true';
+process.env.MAIL_PROVIDER ??= 'memory';
