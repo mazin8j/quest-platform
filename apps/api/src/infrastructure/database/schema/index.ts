@@ -1,6 +1,7 @@
 /**
- * Drizzle schema root. Phase 00 defines NO business tables (rule: no premature schema).
- * Phase 01 adds identity/profile tables here (one file per bounded context, re-exported).
- * Migrations are hand-authored SQL under apps/api/drizzle (see docs/data/DATA_ARCHITECTURE.md).
+ * Drizzle schema root: one file per bounded context, re-exported here. Hand-authored SQL under
+ * apps/api/drizzle is the source of truth (ADR-010); these definitions give the query builder its
+ * column types and must stay in sync with the migrations (verified by the integration suite).
  */
-export {};
+export * from './identity';
+export * from './profiles';
