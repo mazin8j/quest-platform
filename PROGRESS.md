@@ -2,13 +2,27 @@
 
 ## Current Phase
 
-Phase 01 — Identity & Profiles (implemented on branch `phase-01-identity`, 2026-09-06 —
-**awaiting the independent Phase 01 gate audit**; not merged into `main`; Phase 02 is NOT
-authorized by this file).
+Phase 01 — Identity & Profiles (branch `phase-01-identity`, 2026-09-06 — **independent gate audit
+completed: PASS WITH CONDITIONS, 86/100**, `docs/governance/PHASE_GATE_AUDIT_PHASE_01_2026-09-06.md`).
+Not merged into `main`. Phase 02 is authorized by that audit **only after condition C1-P01** (CI
+observed green for this branch) is satisfied.
 
 ## Status
 
-**Phase 01 implemented — awaiting independent phase-gate audit.** Entry conditions were
+**Phase 01 — independent phase-gate audit 2026-09-06: PASS WITH CONDITIONS (86/100).** The audit
+reproduced every validation (cache-cleared `pnpm verify`, integration + E2E on real
+PostgreSQL/Redis, clean-database migrations, OpenAPI drift, builds, mobile export, `deps:check`,
+secret scan) and found 1 P0 and 8 P1 defects — deletion cancel/execute race, orphaned or
+prematurely deleted storage objects, silent erasure failures, advisory lifecycle transitions,
+paused erasures starving the job window, staff-on-staff sanctions, `trust proxy` hop count,
+authentication timing/code-order issues, admin CSRF and the persistence-boundary rule. All were
+repaired on the branch (`audit(P01-*)` commits) with regression tests and the full validation set
+re-run green. Outstanding conditions: **C1-P01 CI must run green for this branch** (the workflow
+triggers only on `push: main` and `pull_request`, so no run exists yet — open a PR), C2-P01
+developer-machine reproduction, C3-P01 mail transport before public sign-up, C4-P01 legal sign-off
+on the minimum-age assumption. New debt: TD-29…TD-36.
+
+**Phase 01 implemented.** Entry conditions were
 confirmed from repository evidence: the Phase 00 audit recorded PASS WITH CONDITIONS (85/100),
 `origin/main` = `f30f860` (C1 CI remediation pushed — the follow-up run's result is recorded below
 as the operator reports it), and `pnpm verify` was green on the baseline before any change.
@@ -99,10 +113,11 @@ new independent audit can authorize it.
 
 ## CI remediation log (condition C1)
 
-| Run                                                                                      | Result                                                                                                                                                                                                 | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Repair                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Actions run 33961497878 (`568562b`, first ever run)                               | **FAIL** — 4 of 5 jobs green (quality, unit tests + builds, migrations + integration tests, secret scan + audit); job "Compose config · Terraform fmt/validate" failed at step "Validate every module" | `modules/cdn-waf` declares `configuration_aliases = [aws.us_east_1]` (CloudFront-scoped WAF must live in us-east-1) and cannot be validated as a root module: `Error: Provider configuration not present … provider["registry.terraform.io/hashicorp/aws"].us_east_1`. Compose config and `terraform fmt` passed. Also: Node.js 20 deprecation warnings for `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `hashicorp/setup-terraform@v3`. Because `cdn-waf` sorts first, the remaining eight modules were never reached in run #1. | Added `modules/cdn-waf/examples/validate/` (a root that supplies both provider configurations, never applied) and a module README; CI now validates alias-dependent modules through their `examples/*` roots and fails if such a module has none; split the job into `compose` and `terraform` so failures are attributable; action runtimes moved to Node-24 generations (`checkout@v6`, `setup-node@v7`, `pnpm/action-setup@v6` resolving pnpm from `packageManager`, `setup-terraform@v4` still pinning Terraform 1.9.8); `trufflehog` pinned to `v3.97.4` instead of `@main`. Application runtime unchanged (Node 22, pnpm 10.28.0). |
-| Follow-up run (after `chore(ci): fix Phase 00 Terraform validation and action runtimes`) | **PENDING** — C1 is not satisfied until this run is green                                                                                                                                              | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Run                                                                                                   | Result                                                                                                                                                                                                 | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Repair                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Actions run 33961497878 (`568562b`, first ever run)                                            | **FAIL** — 4 of 5 jobs green (quality, unit tests + builds, migrations + integration tests, secret scan + audit); job "Compose config · Terraform fmt/validate" failed at step "Validate every module" | `modules/cdn-waf` declares `configuration_aliases = [aws.us_east_1]` (CloudFront-scoped WAF must live in us-east-1) and cannot be validated as a root module: `Error: Provider configuration not present … provider["registry.terraform.io/hashicorp/aws"].us_east_1`. Compose config and `terraform fmt` passed. Also: Node.js 20 deprecation warnings for `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `hashicorp/setup-terraform@v3`. Because `cdn-waf` sorts first, the remaining eight modules were never reached in run #1. | Added `modules/cdn-waf/examples/validate/` (a root that supplies both provider configurations, never applied) and a module README; CI now validates alias-dependent modules through their `examples/*` roots and fails if such a module has none; split the job into `compose` and `terraform` so failures are attributable; action runtimes moved to Node-24 generations (`checkout@v6`, `setup-node@v7`, `pnpm/action-setup@v6` resolving pnpm from `packageManager`, `setup-terraform@v4` still pinning Terraform 1.9.8); `trufflehog` pinned to `v3.97.4` instead of `@main`. Application runtime unchanged (Node 22, pnpm 10.28.0). |
+| Run 34025672933 (`f30f860`, after `chore(ci): fix Phase 00 Terraform validation and action runtimes`) | **SUCCESS** — all six jobs green (quality, unit tests + build, migrations + integration, compose, terraform, security). **C1 satisfied** (observed 2026-09-06 in GitHub Actions).                      | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `phase-01-identity` branch                                                                            | **NO RUN** — the workflow triggers on `push: [main]` and `pull_request` only; the branch was pushed without a PR. Condition **C1-P01**: open a PR and confirm green before Phase 02.                   | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Completed (Phase 01 — Identity & Profiles, branch `phase-01-identity`)
 
@@ -122,7 +137,7 @@ microservice; nothing from Phase 02 (no quests, feed, followers, XP, crews, crea
   identity_audit_ledger; PROFILE: profile, interest, account_interest, privacy_settings,
   account_block), partial unique indexes for email/username, DB checks for the state machine
   (`account_email_lifecycle_check`, `account_active_verified_check`), interest catalogue seed.
-- API (`modules/identity`, `modules/profiles`, 46 routes documented in `docs/api/openapi/v1.json`):
+- API (`modules/identity`, `modules/profiles`, 51 routes documented in `docs/api/openapi/v1.json`):
   registration (password + Apple/Google OIDC adapters + local FAKE adapter), Argon2id credentials
   with lockout and generic errors, HS256 access tokens + rotating refresh tokens with reuse
   detection, per-request session validation (immediate revocation), email verification and
@@ -166,20 +181,35 @@ microservice; nothing from Phase 02 (no quests, feed, followers, XP, crews, crea
 - Real mail delivery, Apple/Google native sign-in UI, avatar upload UI: not exercised end-to-end (TD-21, TD-27).
 - `pnpm install`/`pnpm verify` on the developer machine and the GitHub Actions run for this branch: to be executed by the operator; CI job `migrations` runs the new integration + E2E suites.
 
+## Validations executed (Phase 01 gate audit, 2026-09-06, after the audit repairs)
+
+| Check                                                                    | Result                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `pnpm verify` with the Turborepo cache deleted                           | PASS — 17/17 tasks; **145** unit tests across 12 workspaces  |
+| Integration + E2E on PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector + Redis | PASS — **32** tests (incl. 5 new audit regression tests)     |
+| Clean-database migration → status → apply → status → apply again         | PASS — idempotent, 16 phase tables, catalogue seeded once    |
+| OpenAPI regenerate + `git diff`                                          | PASS — no drift; 51 operations                               |
+| Builds (packages, api, web, admin) + `expo export --platform android`    | PASS                                                         |
+| `pnpm deps:check` (incl. the two new persistence-boundary rules)         | PASS — 0 violations, 205 modules                             |
+| Secret scan / `pnpm audit --audit-level high`                            | PASS — no secrets; 2 high are the documented TD-17 exception |
+
 ## Remaining P0 / P1 blockers
 
-- None known after the review repairs. Phase 01 is committed on `phase-01-identity` (9 commits on
-  top of `f30f860`); not merged; Phase 02 not started.
+- None. The gate audit's P0 and P1 findings were repaired on the branch with regression tests; the
+  residual P2/P3 items are TD-29…TD-36. Phase 01 is committed on `phase-01-identity` (9 phase
+  commits + 3 `audit(P01-*)` commits + this documentation commit on top of `f30f860`); not merged.
 
 ## Next Actions
 
-1. Push `phase-01-identity` and confirm the CI workflow is green for the branch (the `migrations`
-   job now runs the identity integration suite and the SDK E2E journey).
-2. Run the independent Phase 01 gate audit (prompt in the Phase 01 execution report) against the
-   exit conditions in `.claude/skills/quest-phase-01-identity/SKILL.md` and
-   `docs/product/PHASE_01_IDENTITY_ACCEPTANCE.md`.
-3. Only if the audit returns PASS / PASS WITH CONDITIONS: merge to `main`, then invoke
-   `/quest-phase-02-quest-core` — never before.
+1. **C1-P01**: open a pull request for `phase-01-identity` so the CI workflow runs, and confirm all
+   six jobs are green (the `migrations` job runs the identity integration suite and the SDK E2E
+   journey).
+2. **C2-P01**: `corepack enable && pnpm install --frozen-lockfile && pnpm verify` in `C:\Quest`,
+   and `pnpm infra:up && pnpm db:migrate` once Docker Desktop is available; record the results here.
+3. Only after C1-P01 is green: merge to `main`, then invoke `/quest-phase-02-quest-core` — never
+   before.
+4. Before public sign-up: mail transport (TD-21, condition C3-P01) and legal sign-off on the
+   minimum-age assumption (TD-35, condition C4-P01).
 
 ## Last Decision Summary
 

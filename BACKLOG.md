@@ -80,6 +80,34 @@
 - TD-28 Refresh-token reuse detection covers one generation back; keep a bounded history of used
   token hashes per session so any historical replay trips the theft signal.
 
+### Phase 01 gate-audit follow-ups (2026-09-06, `docs/governance/PHASE_GATE_AUDIT_PHASE_01_2026-09-06.md`)
+
+- TD-29 `privacy_settings.discoverable` is stored, defaulted and locked for 13–15 year-olds but no
+  read path consults it yet — the first search / suggestion surface (Phase 03) must honour it, and
+  `GET /v1/profiles/username-availability` stays an existence oracle until then (P01-A2).
+- TD-30 OIDC `nonce` binding: id_tokens are accepted for 5 minutes (`maxTokenAge`) but the client
+  does not yet send back the nonce it used, so a captured token is replayable within that window;
+  add single-use server-side nonces with the native sign-in buttons (TD-27). `OidcIdentityProvider`
+  also has no automated test — add one against a locally minted JWKS (P01-A5).
+- TD-31 Staff-account rectification: no endpoint can correct a mistyped date of birth, so an adult
+  band derived from a wrong DOB is permanent (GDPR Art. 16). Add an audited `MANAGE_STAFF` endpoint
+  that re-derives the band and re-applies `privacyDefaultsFor` (P01-A6).
+- TD-32 `GET /v1/me/blocks` joins the blocked account's **current** username, so the list is an
+  accountId → handle oracle for private profiles. Snapshot the handle at block time (schema change)
+  or hide it for non-visible profiles (P01-A7).
+- TD-33 Export/deletion workers claim work with a read-then-update rather than
+  `UPDATE … RETURNING` / `SELECT … FOR UPDATE SKIP LOCKED`; two runners could process the same
+  request. Harmless with the single CLI runner, mandatory before a scheduled multi-replica worker
+  (P01-A8). Same for the 24-hour export interval, which has no unique-index backstop.
+- TD-34 Consent ledger append-only is a code convention: no DB trigger or `REVOKE UPDATE/DELETE`
+  prevents a future service from rewriting the legal record (P01-A9).
+- TD-35 Legal review of the global minimum age (13) against jurisdictions that set the digital age
+  of consent at 14–16 (GDPR Art. 8), plus a trustworthy country signal to key regional policy on;
+  `deriveAgeBand` is the single seam that would take it (P01-A10).
+- TD-36 The rate-limit metadata published in the OpenAPI registry is not asserted against the
+  `@Throttle` decorators; add a drift test so documented and enforced limits cannot diverge
+  (P01-A11).
+
 ### Should fix
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,

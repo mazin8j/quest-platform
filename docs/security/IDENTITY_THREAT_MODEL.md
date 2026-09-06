@@ -55,5 +55,6 @@ Account-level: lockout, code attempts, session cap 20, export interval 24 h, sin
 - Throttler storage is in-memory per replica (TD-02) — limits are per instance until Redis storage ships.
 - Breached-password check not implemented (TD-25): the deny-list covers only the most common passwords.
 - Session lookup per request without cache (TD-22): acceptable at Phase 01 scale.
+- Provider id_tokens are accepted for 5 minutes (`maxTokenAge`); nonce binding needs a client round-trip and is tracked as TD-30 (audit P01-11).
 - Refresh-token reuse detection covers exactly one generation back (`previous_refresh_token_hash`); an older token fails without tripping the theft signal (TD-28).
 - Mail delivery is a log adapter (TD-21): codes cannot reach real users until a provider is wired.
