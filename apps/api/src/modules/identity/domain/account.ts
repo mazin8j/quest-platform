@@ -77,6 +77,7 @@ export function onboardingNextStep(f: OnboardingFacts): OnboardingStep {
 export function toAccountView(
   account: AccountRecord,
   roles: ReadonlyArray<Role>,
+  auth: { hasPassword: boolean; linkedProviders: AccountView['linkedProviders'] },
   onboarding: { completed: boolean; nextStep: OnboardingStep },
   deletionScheduledFor: Date | null,
 ): AccountView {
@@ -87,6 +88,8 @@ export function toAccountView(
     state: account.state,
     ageBand: accountAgeBand(account),
     roles: ['USER', ...roles.filter((r) => r !== 'USER')],
+    hasPassword: auth.hasPassword,
+    linkedProviders: auth.linkedProviders,
     onboarding,
     createdAt: account.createdAt.toISOString(),
     deletionScheduledFor: deletionScheduledFor?.toISOString() ?? null,

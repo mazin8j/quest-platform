@@ -1451,6 +1451,20 @@
                         ]
                       }
                     },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "linkedProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "APPLE",
+                          "GOOGLE",
+                          "FAKE"
+                        ]
+                      }
+                    },
                     "onboarding": {
                       "type": "object",
                       "properties": {
@@ -1497,6 +1511,8 @@
                     "state",
                     "ageBand",
                     "roles",
+                    "hasPassword",
+                    "linkedProviders",
                     "onboarding",
                     "createdAt",
                     "deletionScheduledFor"
@@ -1645,6 +1661,20 @@
                             ]
                           }
                         },
+                        "hasPassword": {
+                          "type": "boolean"
+                        },
+                        "linkedProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "APPLE",
+                              "GOOGLE",
+                              "FAKE"
+                            ]
+                          }
+                        },
                         "onboarding": {
                           "type": "object",
                           "properties": {
@@ -1691,6 +1721,8 @@
                         "state",
                         "ageBand",
                         "roles",
+                        "hasPassword",
+                        "linkedProviders",
                         "onboarding",
                         "createdAt",
                         "deletionScheduledFor"
@@ -2243,6 +2275,20 @@
                             ]
                           }
                         },
+                        "hasPassword": {
+                          "type": "boolean"
+                        },
+                        "linkedProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "APPLE",
+                              "GOOGLE",
+                              "FAKE"
+                            ]
+                          }
+                        },
                         "onboarding": {
                           "type": "object",
                           "properties": {
@@ -2289,6 +2335,8 @@
                         "state",
                         "ageBand",
                         "roles",
+                        "hasPassword",
+                        "linkedProviders",
                         "onboarding",
                         "createdAt",
                         "deletionScheduledFor"
@@ -2574,6 +2622,20 @@
                             ]
                           }
                         },
+                        "hasPassword": {
+                          "type": "boolean"
+                        },
+                        "linkedProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "APPLE",
+                              "GOOGLE",
+                              "FAKE"
+                            ]
+                          }
+                        },
                         "onboarding": {
                           "type": "object",
                           "properties": {
@@ -2620,6 +2682,8 @@
                         "state",
                         "ageBand",
                         "roles",
+                        "hasPassword",
+                        "linkedProviders",
                         "onboarding",
                         "createdAt",
                         "deletionScheduledFor"
@@ -2836,6 +2900,20 @@
                             ]
                           }
                         },
+                        "hasPassword": {
+                          "type": "boolean"
+                        },
+                        "linkedProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "APPLE",
+                              "GOOGLE",
+                              "FAKE"
+                            ]
+                          }
+                        },
                         "onboarding": {
                           "type": "object",
                           "properties": {
@@ -2882,6 +2960,8 @@
                         "state",
                         "ageBand",
                         "roles",
+                        "hasPassword",
+                        "linkedProviders",
                         "onboarding",
                         "createdAt",
                         "deletionScheduledFor"
@@ -3050,6 +3130,20 @@
                             ]
                           }
                         },
+                        "hasPassword": {
+                          "type": "boolean"
+                        },
+                        "linkedProviders": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "APPLE",
+                              "GOOGLE",
+                              "FAKE"
+                            ]
+                          }
+                        },
                         "onboarding": {
                           "type": "object",
                           "properties": {
@@ -3096,6 +3190,8 @@
                         "state",
                         "ageBand",
                         "roles",
+                        "hasPassword",
+                        "linkedProviders",
                         "onboarding",
                         "createdAt",
                         "deletionScheduledFor"
@@ -3432,6 +3528,20 @@
                         ]
                       }
                     },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "linkedProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "APPLE",
+                          "GOOGLE",
+                          "FAKE"
+                        ]
+                      }
+                    },
                     "onboarding": {
                       "type": "object",
                       "properties": {
@@ -3478,6 +3588,8 @@
                     "state",
                     "ageBand",
                     "roles",
+                    "hasPassword",
+                    "linkedProviders",
                     "onboarding",
                     "createdAt",
                     "deletionScheduledFor"
@@ -5100,6 +5212,20 @@
                         ]
                       }
                     },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "linkedProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "APPLE",
+                          "GOOGLE",
+                          "FAKE"
+                        ]
+                      }
+                    },
                     "onboarding": {
                       "type": "object",
                       "properties": {
@@ -5146,6 +5272,8 @@
                     "state",
                     "ageBand",
                     "roles",
+                    "hasPassword",
+                    "linkedProviders",
                     "onboarding",
                     "createdAt",
                     "deletionScheduledFor"

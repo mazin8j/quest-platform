@@ -508,7 +508,33 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .send({ refreshToken: rotated.refreshToken });
     expect(rotatedAgain.status).toBe(401);
 
-    // Revoke by id and sign out.
+    // Revoke by id: another live session of the same account dies; a foreign session id is a no-op.
+    const third = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', a.ip)
+          .send({ email: a.email, password: a.password })
+      ).body,
+    ).tokens;
+    const stranger = await register('sessions-stranger@example.com');
+    const strangerSessionId = (await request(server()).get('/v1/me/sessions').set(auth(stranger)))
+      .body.data[0].sessionId;
+    expect(
+      (await request(server()).delete(`/v1/me/sessions/${strangerSessionId}`).set(auth(a))).status,
+    ).toBe(204);
+    expect((await request(server()).get('/v1/me').set(auth(stranger))).status).toBe(200); // untouched
+    expect(
+      (await request(server()).delete(`/v1/me/sessions/${third.sessionId}`).set(auth(a))).status,
+    ).toBe(204);
+    expect(
+      (
+        await request(server())
+          .get('/v1/me')
+          .set('authorization', `Bearer ${third.accessToken}`)
+          .set('x-forwarded-for', a.ip)
+      ).status,
+    ).toBe(401);
     const remaining = await request(server()).get('/v1/me/sessions').set(auth(a));
     expect(remaining.body.data).toHaveLength(1);
     const logout = await request(server()).post('/v1/auth/logout').set(auth(a));
@@ -928,6 +954,28 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
         .status,
     ).toBe(200);
 
+    // Two export bundles and an avatar exist in storage before the cascade.
+    const exportService = it_.app.get(DataExportService);
+    const firstExport = await request(server()).post('/v1/me/data-export').set(auth(a));
+    expect(firstExport.status).toBe(202);
+    expect((await exportService.processOpen()).processed).toBe(1);
+    await pg.query(
+      "UPDATE data_export_request SET requested_at = now() - interval '2 days' WHERE account_id = $1",
+      [a.accountId],
+    );
+    expect((await request(server()).post('/v1/me/data-export').set(auth(a))).status).toBe(202);
+    expect((await exportService.processOpen()).processed).toBe(1);
+    const upload = await request(server())
+      .post('/v1/me/profile/avatar-upload')
+      .set(auth(a))
+      .send({ contentType: 'image/jpeg', sizeBytes: 100 });
+    it_.storage.simulateUpload(upload.body.objectKey);
+    await request(server())
+      .put('/v1/me/profile')
+      .set(auth(a))
+      .send({ avatarObjectKey: upload.body.objectKey });
+    expect([...it_.storage.objects.keys()].filter((k) => k.includes(a.accountId))).toHaveLength(3);
+
     // Request again and run the job: not due yet → nothing; due → cascade.
     const again = await request(server())
       .post('/v1/me/deletion-request')
@@ -956,9 +1004,11 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(row.rows[0]?.email_tombstone).toMatch(/^[0-9a-f]{64}$/);
     for (const [table, col] of [
       ['account_credential', 'account_id'],
+      ['account_identity', 'account_id'],
       ['auth_session', 'account_id'],
       ['device', 'account_id'],
       ['verification_code', 'account_id'],
+      ['data_export_request', 'account_id'],
       ['account_interest', 'account_id'],
       ['privacy_settings', 'account_id'],
     ] as const) {
@@ -975,6 +1025,13 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     ]);
     expect(profile.rows[0]).toMatchObject({ username: null, display_name: null, bio: '' });
     expect(profile.rows[0]?.erased_at).not.toBeNull();
+    // Every storage object the account produced (avatar + all export bundles) is gone.
+    expect([...it_.storage.objects.keys()].filter((k) => k.includes(a.accountId))).toEqual([]);
+    const suspension = await pg.query<{ suspended_at: Date | null; suspended_by: string | null }>(
+      'SELECT suspended_at, suspended_by FROM account WHERE id = $1',
+      [a.accountId],
+    );
+    expect(suspension.rows[0]).toEqual({ suspended_at: null, suspended_by: null });
     const consentsKept = await pg.query('SELECT 1 FROM consent_record WHERE account_id = $1', [
       a.accountId,
     ]);
@@ -1012,7 +1069,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect((await request(server()).post('/v1/me/data-export').set(auth(a))).status).toBe(409);
 
     const service = it_.app.get(DataExportService);
-    expect(await service.processOpen()).toEqual({ processed: 1, failed: 0 });
+    expect(await service.processOpen()).toEqual({ processed: 1, failed: 0, expired: 0 });
     const ready = await request(server())
       .get(`/v1/me/data-export/${req.body.exportId}`)
       .set(auth(a));
@@ -1168,6 +1225,159 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
           .send({ reason: 'self' })
       ).status,
     ).toBe(400);
+  });
+
+  it('restores the pre-request state when a deletion is cancelled, and keeps staff powers during the grace period', async () => {
+    // Unverified account → request → cancel → still PENDING_VERIFICATION (never ACTIVE unverified).
+    const pending = await register('cancel-pending@example.com');
+    const req = await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(pending))
+      .send({ currentPassword: pending.password });
+    expect(req.status).toBe(201);
+    const cancelled = await request(server())
+      .post('/v1/me/deletion-request/cancel')
+      .set(auth(pending));
+    expect(cancelled.status).toBe(200);
+    expect(accountViewSchema.parse(cancelled.body).state).toBe('PENDING_VERIFICATION');
+    const invariant = await pg.query(
+      "SELECT 1 FROM account WHERE state = 'ACTIVE' AND email_verified_at IS NULL",
+    );
+    expect(invariant.rowCount).toBe(0);
+
+    // Staff can suspend an account in the grace period; the request is paused and resumes on reinstate.
+    const user = await register('cancel-suspend@example.com');
+    await verify(user);
+    const staff = await register('cancel-staff@example.com');
+    await verify(staff);
+    await it_.app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
+    const staffTokens = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', staff.ip)
+          .send({ email: staff.email, password: staff.password })
+      ).body,
+    ).tokens;
+    staff.accessToken = staffTokens.accessToken;
+    const userReq = await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(user))
+      .send({ currentPassword: user.password });
+    expect(userReq.status).toBe(201);
+    const suspend = await request(server())
+      .post(`/v1/admin/accounts/${user.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'investigation during grace period' });
+    expect(suspend.status, JSON.stringify(suspend.body)).toBe(200);
+    expect(suspend.body.state).toBe('SUSPENDED');
+    expect(suspend.body.deletionScheduledFor).toBe(userReq.body.scheduledFor);
+    // Paused: the job does not delete a suspended account even when the grace period elapsed.
+    const due = new Date(new Date(userReq.body.scheduledFor).getTime() + 1000);
+    expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
+      deleted: 0,
+      failed: 0,
+    });
+    expect(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', nextIp())
+          .send({ email: user.email, password: user.password })
+      ).status,
+    ).toBe(401);
+    const reinstate = await request(server())
+      .post(`/v1/admin/accounts/${user.accountId}/reinstate`)
+      .set(auth(staff));
+    expect(reinstate.body.state).toBe('DELETION_REQUESTED');
+    expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
+      deleted: 1,
+      failed: 0,
+    });
+  });
+
+  it('lets provider-only accounts request deletion without a password and re-picks stale export work', async () => {
+    const ip = nextIp();
+    const reg = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/provider/register')
+          .set('x-forwarded-for', ip)
+          .send({
+            provider: 'FAKE',
+            idToken: 'fake:subject-del:provdel@example.com',
+            dateOfBirth: dob(30),
+            consents,
+          })
+      ).body,
+    );
+    expect(reg.account.hasPassword).toBe(false);
+    expect(reg.account.linkedProviders).toEqual(['FAKE']);
+    const asProv = { authorization: `Bearer ${reg.tokens.accessToken}`, 'x-forwarded-for': ip };
+    const exp = await request(server()).post('/v1/me/data-export').set(asProv);
+    expect(exp.status).toBe(202);
+    // Simulate a worker that crashed mid-export: PROCESSING with a stale start time.
+    await pg.query(
+      "UPDATE data_export_request SET status = 'PROCESSING', started_at = now() - interval '1 hour' WHERE id = $1",
+      [exp.body.exportId],
+    );
+    const service = it_.app.get(DataExportService);
+    expect((await service.processOpen()).processed).toBe(1);
+    expect(
+      (await request(server()).get(`/v1/me/data-export/${exp.body.exportId}`).set(asProv)).body
+        .status,
+    ).toBe('READY');
+    // Expiry sweep removes the object once past the TTL.
+    await pg.query(
+      "UPDATE data_export_request SET expires_at = now() - interval '1 minute' WHERE id = $1",
+      [exp.body.exportId],
+    );
+    expect((await service.processOpen()).expired).toBe(1);
+    expect(
+      it_.storage.objects.has(`exports/${reg.account.accountId}/${exp.body.exportId}.json`),
+    ).toBe(false);
+    expect(
+      (await request(server()).get(`/v1/me/data-export/${exp.body.exportId}`).set(asProv)).body
+        .status,
+    ).toBe('EXPIRED');
+
+    const del = await request(server()).post('/v1/me/deletion-request').set(asProv).send({});
+    expect(del.status, JSON.stringify(del.body)).toBe(201);
+  });
+
+  it('hides non-public profiles from anonymous callers and strips the photo from limited cards', async () => {
+    const owner = await register('limited-owner@example.com');
+    await verify(owner);
+    await request(server())
+      .put('/v1/me/profile')
+      .set(auth(owner))
+      .send({ username: 'limited_owner', displayName: 'Limited' });
+    const upload = await request(server())
+      .post('/v1/me/profile/avatar-upload')
+      .set(auth(owner))
+      .send({ contentType: 'image/png', sizeBytes: 10 });
+    it_.storage.simulateUpload(upload.body.objectKey, 'image/png');
+    await request(server())
+      .put('/v1/me/profile')
+      .set(auth(owner))
+      .send({ avatarObjectKey: upload.body.objectKey });
+    await request(server())
+      .put('/v1/me/privacy')
+      .set(auth(owner))
+      .send({ profileVisibility: 'PRIVATE' });
+    const viewer = await register('limited-viewer@example.com');
+    const anonymous = await request(server())
+      .get('/v1/profiles/limited_owner')
+      .set('x-forwarded-for', nextIp());
+    expect(anonymous.status).toBe(404);
+    const limited = publicProfileViewSchema.parse(
+      (await request(server()).get('/v1/profiles/limited_owner').set(auth(viewer))).body,
+    );
+    expect(limited).toMatchObject({ isLimited: true, avatarUrl: null, bio: '', interests: [] });
+    const own = publicProfileViewSchema.parse(
+      (await request(server()).get('/v1/profiles/limited_owner').set(auth(owner))).body,
+    );
+    expect(own.avatarUrl).toContain(upload.body.objectKey);
   });
 
   it('never exposes secrets or the date of birth through any identity response', async () => {

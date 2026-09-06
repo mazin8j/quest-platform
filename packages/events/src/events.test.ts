@@ -139,3 +139,22 @@ describe('InMemoryEventBus', () => {
     expect(idempotentHandler).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('InMemoryEventBus retention', () => {
+  it('bounds the retained log so a long-running process cannot leak memory', async () => {
+    const bus = new InMemoryEventBus({ maxRetained: 3 });
+    const def = defineEvent({
+      eventType: 'test.thing.happened',
+      eventVersion: 1,
+      aggregateType: 'thing',
+      payloadSchema: z.object({ n: z.number() }),
+    });
+    for (let n = 0; n < 10; n += 1) {
+      await bus.publish(
+        createEvent(def, { n }, { aggregateId: 'a', correlationId: 'c', source: 's' }),
+      );
+    }
+    expect(bus.published()).toHaveLength(3);
+    expect(bus.published().map((e) => e.payload.n)).toEqual([7, 8, 9]);
+  });
+});

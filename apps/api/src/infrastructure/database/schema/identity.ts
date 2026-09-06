@@ -19,26 +19,22 @@ import {
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
-export const account = pgTable(
-  'account',
-  {
-    id: uuid('id').primaryKey(),
-    email: text('email'),
-    emailVerifiedAt: ts('email_verified_at'),
-    emailTombstone: text('email_tombstone'),
-    state: text('state').notNull(),
-    dateOfBirth: date('date_of_birth', { mode: 'string' }).notNull(),
-    lastLoginAt: ts('last_login_at'),
-    deactivatedAt: ts('deactivated_at'),
-    suspendedAt: ts('suspended_at'),
-    suspendedBy: uuid('suspended_by'),
-    suspensionReason: text('suspension_reason'),
-    deletedAt: ts('deleted_at'),
-    createdAt: ts('created_at').notNull().defaultNow(),
-    updatedAt: ts('updated_at').notNull().defaultNow(),
-  },
-  (t) => [index('account_state_idx').on(t.state)],
-);
+export const account = pgTable('account', {
+  id: uuid('id').primaryKey(),
+  email: text('email'),
+  emailVerifiedAt: ts('email_verified_at'),
+  emailTombstone: text('email_tombstone'),
+  state: text('state').notNull(),
+  dateOfBirth: date('date_of_birth', { mode: 'string' }).notNull(),
+  lastLoginAt: ts('last_login_at'),
+  deactivatedAt: ts('deactivated_at'),
+  suspendedAt: ts('suspended_at'),
+  suspendedBy: uuid('suspended_by'),
+  suspensionReason: text('suspension_reason'),
+  deletedAt: ts('deleted_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
 
 export const accountRole = pgTable(
   'account_role',
@@ -69,7 +65,7 @@ export const consentRecord = pgTable(
     source: text('source').notNull(),
     recordedAt: ts('recorded_at').notNull().defaultNow(),
   },
-  (t) => [index('consent_record_account_type_idx').on(t.accountId, t.consentType, t.recordedAt)],
+  (t) => [index('consent_record_account_recorded_idx').on(t.accountId, t.recordedAt, t.id)],
 );
 
 export const accountDeletionRequest = pgTable(
@@ -80,6 +76,7 @@ export const accountDeletionRequest = pgTable(
       .notNull()
       .references(() => account.id),
     status: text('status').notNull(),
+    previousState: text('previous_state').notNull(),
     reason: text('reason'),
     requestedAt: ts('requested_at').notNull().defaultNow(),
     scheduledFor: ts('scheduled_for').notNull(),
@@ -151,7 +148,7 @@ export const verificationCode = pgTable(
     consumedAt: ts('consumed_at'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
-  (t) => [index('verification_code_live_idx').on(t.accountId, t.purpose, t.createdAt)],
+  (t) => [index('verification_code_account_idx').on(t.accountId, t.createdAt)],
 );
 
 export const device = pgTable(

@@ -13,6 +13,7 @@ import {
 import { getRequestContext } from '../../../common/context/request-context';
 import { ApiError } from '../../../common/filters/api-error';
 import { uuidv7 } from '../../../common/ids/uuid-v7';
+import { isUniqueViolation } from '../../../common/persistence/unique-violation';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -58,7 +59,7 @@ export class RegistrationService {
     // reveal whether the email exists.
     const passwordHash = await this.hasher.hash(input.password);
 
-    const result = await this.db.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       if (await this.accounts.findLiveByEmail(input.email, tx)) {
         throw ApiError.conflict('An account with this email already exists');
       }
@@ -106,7 +107,7 @@ export class RegistrationService {
     }
     const email = identity.email;
 
-    const result = await this.db.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       if (await this.accounts.findIdentity(identity.provider, identity.subject, tx)) {
         throw ApiError.conflict('This identity is already linked to an account');
       }
@@ -146,6 +147,20 @@ export class RegistrationService {
   }
 
   // ---------------------------------------------------------------------------- helpers ----
+
+  /** Concurrent registrations for one email/identity race on the unique index → CONFLICT, not 500. */
+  private transaction<T>(
+    fn: Parameters<Database['transaction']>[0] extends (tx: infer X) => unknown
+      ? (tx: X) => Promise<T>
+      : never,
+  ): Promise<T> {
+    return this.db.transaction(fn).catch((error: unknown) => {
+      if (isUniqueViolation(error)) {
+        throw ApiError.conflict('An account with this email or identity already exists');
+      }
+      throw error;
+    });
+  }
 
   private assertAgeAndConsents(dateOfBirth: string, consents: RegistrationConsents): void {
     if (deriveAgeBand(dateOfBirth) === 'UNDER_MINIMUM') {

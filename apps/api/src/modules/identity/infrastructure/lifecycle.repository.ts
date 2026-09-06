@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { DataExportStatus, DeletionRequestStatus } from '@quest/types';
-import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
+import type { AccountState, DataExportStatus, DeletionRequestStatus } from '@quest/types';
+import { and, desc, eq, lt, lte, or, sql } from 'drizzle-orm';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -29,6 +29,7 @@ export interface DeletionRequestRecord {
   id: string;
   accountId: string;
   status: DeletionRequestStatus;
+  previousState: AccountState;
   reason: string | null;
   requestedAt: Date;
   scheduledFor: Date;
@@ -105,7 +106,7 @@ export class LifecycleRepository {
           sql`${verificationCode.consumedAt} IS NULL`,
         ),
       )
-      .orderBy(desc(verificationCode.createdAt))
+      .orderBy(desc(verificationCode.createdAt), desc(verificationCode.id))
       .limit(1);
     return rows[0] ? (rows[0] as VerificationCodeRecord) : undefined;
   }
@@ -188,7 +189,12 @@ export class LifecycleRepository {
   }
 
   async createDeletion(
-    input: { accountId: string; scheduledFor: Date; reason: string | null },
+    input: {
+      accountId: string;
+      previousState: AccountState;
+      scheduledFor: Date;
+      reason: string | null;
+    },
     tx?: Executor,
   ): Promise<DeletionRequestRecord> {
     const rows = await this.exec(tx)
@@ -197,6 +203,7 @@ export class LifecycleRepository {
         id: uuidv7(),
         accountId: input.accountId,
         status: 'PENDING',
+        previousState: input.previousState,
         scheduledFor: input.scheduledFor,
         reason: input.reason,
       })
@@ -284,13 +291,41 @@ export class LifecycleRepository {
     await this.exec(tx).update(dataExportRequest).set(patch).where(eq(dataExportRequest.id, id));
   }
 
-  async openExports(limit: number, tx?: Executor): Promise<DataExportRecord[]> {
+  /** Worker input: REQUESTED items plus PROCESSING items whose worker died (stale start). */
+  async openExports(limit: number, staleBefore: Date, tx?: Executor): Promise<DataExportRecord[]> {
     const rows = await this.exec(tx)
       .select()
       .from(dataExportRequest)
-      .where(inArray(dataExportRequest.status, ['REQUESTED']))
+      .where(
+        or(
+          eq(dataExportRequest.status, 'REQUESTED'),
+          and(
+            eq(dataExportRequest.status, 'PROCESSING'),
+            lt(dataExportRequest.startedAt, staleBefore),
+          ),
+        ),
+      )
       .orderBy(dataExportRequest.requestedAt)
       .limit(limit);
+    return rows.map(toExport);
+  }
+
+  /** Sweep input: READY bundles past their expiry. */
+  async expiredReadyExports(now: Date, limit: number, tx?: Executor): Promise<DataExportRecord[]> {
+    const rows = await this.exec(tx)
+      .select()
+      .from(dataExportRequest)
+      .where(and(eq(dataExportRequest.status, 'READY'), lte(dataExportRequest.expiresAt, now)))
+      .orderBy(dataExportRequest.expiresAt)
+      .limit(limit);
+    return rows.map(toExport);
+  }
+
+  async listExports(accountId: string, tx?: Executor): Promise<DataExportRecord[]> {
+    const rows = await this.exec(tx)
+      .select()
+      .from(dataExportRequest)
+      .where(eq(dataExportRequest.accountId, accountId));
     return rows.map(toExport);
   }
 
@@ -347,7 +382,11 @@ export class LifecycleRepository {
 }
 
 function toDeletion(row: typeof accountDeletionRequest.$inferSelect): DeletionRequestRecord {
-  return { ...row, status: row.status as DeletionRequestStatus };
+  return {
+    ...row,
+    status: row.status as DeletionRequestStatus,
+    previousState: row.previousState as AccountState,
+  };
 }
 
 function toExport(row: typeof dataExportRequest.$inferSelect): DataExportRecord {

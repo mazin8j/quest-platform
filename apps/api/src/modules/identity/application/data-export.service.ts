@@ -28,6 +28,8 @@ import { MAILER, type MailerPort } from '../ports/mailer.port';
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const DOWNLOAD_URL_TTL_S = 900;
+/** A PROCESSING item older than this is considered abandoned by a crashed worker and re-picked. */
+const PROCESSING_STALE_MS = 15 * 60_000;
 
 /**
  * User-data export (right of access / portability). Requests are recorded synchronously and
@@ -59,9 +61,11 @@ export class DataExportService implements OnModuleInit {
   async request(principal: Principal): Promise<DataExportRequestView> {
     const latest = await this.lifecycle.latestExport(principal.accountId);
     if (latest) {
-      if (latest.status === 'REQUESTED' || latest.status === 'PROCESSING') {
-        throw ApiError.conflict('An export is already in progress');
-      }
+      const inProgress =
+        latest.status === 'REQUESTED' ||
+        (latest.status === 'PROCESSING' &&
+          (latest.startedAt?.getTime() ?? 0) > Date.now() - PROCESSING_STALE_MS);
+      if (inProgress) throw ApiError.conflict('An export is already in progress');
       const ageMs = Date.now() - latest.requestedAt.getTime();
       if (ageMs < DATA_EXPORT_MIN_INTERVAL_HOURS * HOUR_MS) {
         throw ApiError.conflict(
@@ -87,9 +91,16 @@ export class DataExportService implements OnModuleInit {
     return this.view(await this.expireIfDue(record));
   }
 
-  /** Worker entry point: fulfils open requests. Idempotent per request (status guards). */
-  async processOpen(limit = 20): Promise<{ processed: number; failed: number }> {
-    const open = await this.lifecycle.openExports(limit);
+  /**
+   * Worker entry point: fulfils open requests (including PROCESSING items abandoned by a crashed
+   * worker) and expires READY bundles past their TTL, deleting the objects.
+   */
+  async processOpen(limit = 20): Promise<{ processed: number; failed: number; expired: number }> {
+    const expired = await this.expireDue(new Date(), limit);
+    const open = await this.lifecycle.openExports(
+      limit,
+      new Date(Date.now() - PROCESSING_STALE_MS),
+    );
     let processed = 0;
     let failed = 0;
     for (const record of open) {
@@ -110,7 +121,24 @@ export class DataExportService implements OnModuleInit {
         await this.lifecycle.audit({ accountId: record.accountId, eventType: 'EXPORT_FAILED' });
       }
     }
-    return { processed, failed };
+    return { processed, failed, expired };
+  }
+
+  /** Marks READY bundles past `expires_at` as EXPIRED and removes their objects. Idempotent. */
+  async expireDue(now: Date, limit = 100): Promise<number> {
+    const due = await this.lifecycle.expiredReadyExports(now, limit);
+    for (const record of due) {
+      await this.lifecycle.updateExport(record.id, { status: 'EXPIRED' });
+      if (record.objectKey) await this.storage.delete(record.objectKey).catch(() => undefined);
+    }
+    return due.length;
+  }
+
+  /** Deletion cascade helper: removes every bundle object the account ever produced. */
+  async deleteAllObjectsFor(accountId: string): Promise<void> {
+    for (const record of await this.lifecycle.listExports(accountId)) {
+      if (record.objectKey) await this.storage.delete(record.objectKey).catch(() => undefined);
+    }
   }
 
   async fulfil(record: DataExportRecord): Promise<void> {

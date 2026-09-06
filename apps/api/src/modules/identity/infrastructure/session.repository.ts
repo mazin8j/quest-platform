@@ -85,7 +85,7 @@ export class SessionRepository {
       .limit(2);
     const current = rows.find((r) => r.refreshTokenHash === hash);
     if (current) return { session: toSession(current), matchedPrevious: false };
-    const previous = rows[0];
+    const previous = rows.find((r) => r.previousRefreshTokenHash === hash);
     return previous ? { session: toSession(previous), matchedPrevious: true } : undefined;
   }
 
@@ -115,13 +115,6 @@ export class SessionRepository {
       )
       .returning({ id: authSession.id });
     return rows.length > 0;
-  }
-
-  async touchSession(sessionId: string, tx?: Executor): Promise<void> {
-    await this.exec(tx)
-      .update(authSession)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(authSession.id, sessionId));
   }
 
   async revokeSession(sessionId: string, reason: string, tx?: Executor): Promise<boolean> {
@@ -187,10 +180,18 @@ export class SessionRepository {
 
   /** Evicts the oldest live sessions beyond `keep` (session cap per account). */
   async evictOldestBeyond(accountId: string, keep: number, tx?: Executor): Promise<number> {
+    const now = new Date();
     const live = await this.exec(tx)
       .select({ id: authSession.id })
       .from(authSession)
-      .where(and(eq(authSession.accountId, accountId), isNull(authSession.revokedAt)))
+      .where(
+        and(
+          eq(authSession.accountId, accountId),
+          isNull(authSession.revokedAt),
+          sql`${authSession.absoluteExpiresAt} > ${now}`,
+          sql`${authSession.refreshExpiresAt} > ${now}`,
+        ),
+      )
       .orderBy(asc(authSession.lastUsedAt));
     const surplus = live.length - keep;
     if (surplus <= 0) return 0;

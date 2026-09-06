@@ -21,6 +21,8 @@ export default function AccountSettingsScreen() {
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [password, setPassword] = useState('');
   const email = state.status === 'signedIn' ? state.account.email : '';
+  // Provider-only accounts (Apple/Google) have no password: the API skips re-authentication.
+  const hasPassword = state.status === 'signedIn' ? state.account.hasPassword : true;
 
   const load = useCallback(() => {
     store
@@ -43,7 +45,9 @@ export default function AccountSettingsScreen() {
     await store.signOut();
   });
   const requestDeletion = useAction(async () => {
-    await store.call((api) => api.me.requestDeletion({ currentPassword: password }));
+    await store.call((api) =>
+      api.me.requestDeletion(hasPassword ? { currentPassword: password } : {}),
+    );
     await store.refreshAccount();
   });
 
@@ -58,7 +62,7 @@ export default function AccountSettingsScreen() {
             {s.client.deviceName ?? s.client.platform ?? 'Unknown device'}{' '}
             {s.current ? '(this device)' : ''}
           </Text>
-          <Muted>Last used {new Date(s.lastUsedAt).toLocaleString()}</Muted>
+          <Muted>Last refreshed {new Date(s.lastUsedAt).toLocaleString()}</Muted>
           {!s.current ? (
             <PrimaryButton
               title="Revoke"
@@ -86,18 +90,20 @@ export default function AccountSettingsScreen() {
         variant="secondary"
         disabled={deactivate.pending}
       />
-      <TextField
-        label="Confirm your password to request deletion"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+      {hasPassword ? (
+        <TextField
+          label="Confirm your password to request deletion"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+      ) : null}
       <FormError error={requestDeletion.error ?? deactivate.error} />
       <PrimaryButton
         title="Request account deletion"
         onPress={() => requestDeletion.run()}
         variant="danger"
-        disabled={requestDeletion.pending || !password}
+        disabled={requestDeletion.pending || (hasPassword && !password)}
       />
     </Screen>
   );

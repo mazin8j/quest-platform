@@ -12,6 +12,7 @@ import {
   type EventPublisher,
 } from '@quest/events';
 import {
+  type AccountState,
   type AccountSupportView,
   type AccountView,
   type ConsentRecord,
@@ -205,7 +206,12 @@ export class AccountService {
     const scheduledFor = new Date(Date.now() + DELETION_GRACE_DAYS * DAY_MS);
     const { request, revoked } = await this.db.transaction(async (tx) => {
       const request = await this.lifecycle.createDeletion(
-        { accountId: account.id, scheduledFor, reason: input.reason ?? null },
+        {
+          accountId: account.id,
+          previousState: account.state,
+          scheduledFor,
+          reason: input.reason ?? null,
+        },
         tx,
       );
       await this.accounts.update(account.id, { state: next }, tx);
@@ -252,13 +258,22 @@ export class AccountService {
     const account = await this.requireAccount(principal.accountId);
     const pending = await this.lifecycle.pendingDeletion(account.id);
     if (!pending) throw ApiError.notFound('Deletion request');
-    const next = transitionAccount(account.state, 'CANCEL_DELETION');
+    transitionAccount(account.state, 'CANCEL_DELETION');
+    // Restore the state the request was made from: an unverified account stays unverified, a
+    // suspended one stays suspended; a deactivated one is reactivated by this very sign-in.
+    const next: AccountState =
+      pending.previousState === 'PENDING_VERIFICATION' && !account.emailVerifiedAt
+        ? 'PENDING_VERIFICATION'
+        : pending.previousState === 'SUSPENDED'
+          ? 'SUSPENDED'
+          : 'ACTIVE';
     await this.db.transaction(async (tx) => {
       await this.lifecycle.cancelDeletion(pending.id, tx);
       await this.accounts.update(account.id, { state: next }, tx);
-      // Cancelling restores the pre-request visibility: active only if the email is verified.
-      await this.profiles.setAccountActive(account.id, account.emailVerifiedAt !== null, tx);
+      await this.profiles.setAccountActive(account.id, next === 'ACTIVE', tx);
       await this.lifecycle.audit({ accountId: account.id, eventType: 'DELETION_CANCELLED' }, tx);
+      if (next === 'SUSPENDED')
+        await this.sessions.revokeAll(account.id, 'SUSPENDED', undefined, tx);
     });
     this.metrics.increment('quest.identity.deletion_cancelled');
     await this.events.publish(
@@ -351,14 +366,22 @@ export class AccountService {
 
   async reinstate(staff: Principal, accountId: string): Promise<AccountSupportView> {
     const account = await this.requireAccount(accountId);
-    const next = transitionAccount(account.state, 'REINSTATE');
+    // A deletion request paused by the suspension resumes; otherwise the account becomes usable.
+    const pending = await this.lifecycle.pendingDeletion(account.id);
+    const next = transitionAccount(account.state, pending ? 'RESUME_DELETION' : 'REINSTATE');
+    const usable = next === 'ACTIVE' && account.emailVerifiedAt !== null;
     await this.db.transaction(async (tx) => {
       await this.accounts.update(
         account.id,
-        { state: next, suspendedAt: null, suspendedBy: null, suspensionReason: null },
+        {
+          state: usable || next !== 'ACTIVE' ? next : 'PENDING_VERIFICATION',
+          suspendedAt: null,
+          suspendedBy: null,
+          suspensionReason: null,
+        },
         tx,
       );
-      await this.profiles.setAccountActive(account.id, account.emailVerifiedAt !== null, tx);
+      await this.profiles.setAccountActive(account.id, usable, tx);
       await this.lifecycle.audit(
         { accountId: account.id, actorId: staff.accountId, eventType: 'REINSTATED' },
         tx,

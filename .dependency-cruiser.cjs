@@ -41,6 +41,14 @@ module.exports = {
       },
     },
     {
+      name: 'profiles-must-not-import-identity',
+      severity: 'error',
+      comment:
+        'Identity is upstream of Profiles: Identity drives Profiles through its exported ports; Profiles never depends on Identity (ADR-011).',
+      from: { path: '^apps/api/src/modules/profiles/' },
+      to: { path: '^apps/api/src/modules/identity/' },
+    },
+    {
       name: 'api-modules-must-not-import-app-root',
       severity: 'error',
       comment: 'Modules must not depend on the composition root (app.module / main).',

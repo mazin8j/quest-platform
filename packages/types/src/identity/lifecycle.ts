@@ -11,10 +11,11 @@ import { z } from 'zod';
  *            │                           SUSPENDED (staff)              │
  *            │                              │                           │
  *            └──────── request deletion ────┴──────────────────────────▶ DELETION_REQUESTED
- *                                                                          │      │
- *                                                        cancel (grace) ◀──┘      │ grace elapsed
- *                                                                                 ▼
- *                                                                              DELETED (terminal, anonymised)
+ *                                                                    ▲     │      │
+ *                                        SUSPENDED ──resume deletion─┘     │      │ grace elapsed
+ *                                            ▲  (staff)                    │      ▼
+ *                                            └──── suspend ────────────────┘   DELETED (terminal)
+ *   cancel (grace) restores the state the request was made from (previous_state).
  */
 export const AccountState = {
   PENDING_VERIFICATION: 'PENDING_VERIFICATION',
@@ -38,6 +39,8 @@ export const AccountTransition = {
   REQUEST_DELETION: 'REQUEST_DELETION',
   CANCEL_DELETION: 'CANCEL_DELETION',
   COMPLETE_DELETION: 'COMPLETE_DELETION',
+  /** Staff reinstated an account that still has a pending deletion request. */
+  RESUME_DELETION: 'RESUME_DELETION',
 } as const;
 export type AccountTransition = (typeof AccountTransition)[keyof typeof AccountTransition];
 
@@ -65,12 +68,17 @@ export const ACCOUNT_TRANSITIONS: Readonly<
   },
   SUSPENDED: {
     [T.REINSTATE]: S.ACTIVE,
+    [T.RESUME_DELETION]: S.DELETION_REQUESTED,
     // A suspended user may still exercise the right to erasure; staff review the request.
     [T.REQUEST_DELETION]: S.DELETION_REQUESTED,
   },
   DELETION_REQUESTED: {
+    // CANCEL_DELETION targets ACTIVE only when the request was made from ACTIVE; the service
+    // restores the recorded previous state (PENDING_VERIFICATION / SUSPENDED) otherwise.
     [T.CANCEL_DELETION]: S.ACTIVE,
     [T.COMPLETE_DELETION]: S.DELETED,
+    // Trust & Safety keeps its power during the grace period; the pending request is paused.
+    [T.SUSPEND]: S.SUSPENDED,
   },
   DELETED: {},
 };

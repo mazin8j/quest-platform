@@ -123,11 +123,6 @@ export type RecordConsentRequest = z.infer<typeof recordConsentRequestSchema>;
 // Lifecycle actions
 // ---------------------------------------------------------------------------------------------
 
-export const deactivateAccountRequestSchema = z.object({
-  /** Optional free-text reason (max 500 chars); stored internally for product research only. */
-  reason: z.string().trim().max(500).optional(),
-});
-
 export const DeletionRequestStatus = {
   PENDING: 'PENDING',
   CANCELLED: 'CANCELLED',

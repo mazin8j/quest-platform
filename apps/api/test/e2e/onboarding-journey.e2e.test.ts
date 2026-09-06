@@ -113,8 +113,22 @@ describe.skipIf(!enabled)('E2E: onboarding journey through the client SDK', () =
       api.profile.updatePrivacy({ profileVisibility: 'PRIVATE' }),
     );
     expect(privacy.profileVisibility).toBe('PRIVATE');
-    const asStranger = await sdk('10.9.0.2').api.public.profile('e2e_user');
-    expect(asStranger.isLimited).toBe(true);
+    // Anonymous callers never see a non-public profile; a signed-in stranger sees a limited card.
+    await expect(sdk('10.9.0.2').api.public.profile('e2e_user')).rejects.toMatchObject({
+      status: 404,
+    });
+    const stranger = sdk('10.9.0.5');
+    const strangerReg = await stranger.api.auth.register({
+      email: 'e2e-stranger@example.com',
+      password: 'a stranger end to end passphrase',
+      dateOfBirth: dob(31),
+      consents,
+    });
+    await stranger.session.set(strangerReg.tokens);
+    const asStranger = await withAuthRetry(stranger.session, () =>
+      stranger.api.public.profile('e2e_user'),
+    );
+    expect(asStranger).toMatchObject({ isLimited: true, avatarUrl: null, bio: '' });
     await withAuthRetry(session, () => api.profile.updatePrivacy({ profileVisibility: 'PUBLIC' }));
     expect((await sdk('10.9.0.3').api.public.profile('e2e_user')).isLimited).toBe(false);
 

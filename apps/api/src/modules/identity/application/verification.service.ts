@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ApiError } from '../../../common/filters/api-error';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config';
+import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import type { Executor } from '../../../infrastructure/database/executor';
 import {
   constantTimeEquals,
@@ -23,6 +24,7 @@ import { MAILER, type MailerPort } from '../ports/mailer.port';
 @Injectable()
 export class VerificationService {
   constructor(
+    @Inject(DATABASE) private readonly db: Database,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(MAILER) private readonly mailer: MailerPort,
     @Inject(METRICS) private readonly metrics: MetricsPort,
@@ -48,15 +50,16 @@ export class VerificationService {
     }
     const code = generateVerificationCode();
     const ttlMinutes = this.config.AUTH_VERIFICATION_CODE_TTL_MINUTES;
-    await this.lifecycle.issueCode(
-      {
-        accountId: input.accountId,
-        purpose: input.purpose,
-        codeHash: hashVerificationCode(input.accountId, code),
-        expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
-      },
-      tx,
-    );
+    const record = {
+      accountId: input.accountId,
+      purpose: input.purpose,
+      codeHash: hashVerificationCode(input.accountId, code),
+      expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+    };
+    // Consume-then-insert must be atomic: the partial unique index (one live code per
+    // account/purpose) turns a concurrent resend into a unique violation instead of two live codes.
+    if (tx) await this.lifecycle.issueCode(record, tx);
+    else await this.db.transaction((t) => this.lifecycle.issueCode(record, t));
     await this.mailer.send({
       to: input.email,
       language: input.language,

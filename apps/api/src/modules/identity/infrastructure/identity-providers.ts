@@ -59,11 +59,13 @@ export class OidcIdentityProvider implements IdentityProviderPort {
       if (typeof payload.sub !== 'string' || payload.sub.length === 0) return null;
       const rawEmail = typeof payload.email === 'string' ? payload.email : null;
       const parsed = rawEmail ? emailSchema.safeParse(rawEmail) : null;
+      // Apple omits `email_verified` for addresses it has verified itself; an explicit false from
+      // any provider is honoured. Google always sends the claim.
       const verifiedClaim = payload.email_verified;
       const emailVerified =
         verifiedClaim === true ||
         verifiedClaim === 'true' ||
-        (this.provider === 'APPLE' && !!parsed?.success);
+        (this.provider === 'APPLE' && verifiedClaim === undefined && !!parsed?.success);
       return {
         provider: this.provider,
         subject: payload.sub,

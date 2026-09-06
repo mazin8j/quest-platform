@@ -25,6 +25,7 @@ import type { Principal } from '../../../common/auth/principal';
 import { getRequestContext } from '../../../common/context/request-context';
 import { ApiError } from '../../../common/filters/api-error';
 import { uuidv7 } from '../../../common/ids/uuid-v7';
+import { isUniqueViolation } from '../../../common/persistence/unique-violation';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -48,15 +49,6 @@ import type {
 
 const SOURCE = 'api.profiles';
 const AVATAR_URL_TTL_S = 3600;
-const UNIQUE_VIOLATION = '23505';
-
-/** Drizzle wraps driver errors (DrizzleQueryError.cause); check both levels. */
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const code = (error as { code?: unknown }).code;
-  if (code === UNIQUE_VIOLATION) return true;
-  return isUniqueViolation((error as { cause?: unknown }).cause);
-}
 
 /** Principal facts the Profiles context needs; the age band comes from Identity, never the DOB. */
 export type ProfilePrincipal = Pick<Principal, 'accountId' | 'emailVerified' | 'ageBand'>;
@@ -275,13 +267,17 @@ export class ProfileService
     const privacy = await this.requirePrivacy(p.accountId);
     // FOLLOWERS resolves to "limited" until the social graph exists (Phase 03); PRIVATE is limited.
     const limited = !isOwner && privacy.profileVisibility !== 'PUBLIC';
+    // Non-public profiles are not visible to anonymous callers at all: a limited card (handle +
+    // display name, no photo) is a signed-in-only affordance, which also keeps minors — who can
+    // never be PUBLIC below 16 — invisible to unauthenticated scraping.
+    if (limited && !viewer) throw ApiError.notFound('Profile');
     const interests = limited ? [] : await this.repo.selectedInterests(p.accountId);
     return {
       accountId: p.accountId,
       username: p.username,
       displayName: p.displayName,
       bio: limited ? '' : p.bio,
-      avatarUrl: await this.avatarUrl(p.avatarObjectKey),
+      avatarUrl: limited ? null : await this.avatarUrl(p.avatarObjectKey),
       country: !limited && privacy.locationVisibility !== 'HIDDEN' ? p.country : null,
       isLimited: limited,
       interests,

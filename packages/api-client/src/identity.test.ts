@@ -20,6 +20,8 @@ const authResponse = (t: TokenPair): AuthResponse => ({
     state: 'ACTIVE',
     ageBand: 'ADULT',
     roles: ['USER'],
+    hasPassword: true,
+    linkedProviders: [],
     onboarding: { completed: true, nextStep: 'DONE' },
     createdAt: '2026-09-06T00:00:00.000Z',
     deletionScheduledFor: null,

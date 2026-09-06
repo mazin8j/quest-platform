@@ -179,6 +179,10 @@ export const accountViewSchema = z.object({
   /** Derived from the stored date of birth; the date itself is never returned to clients. */
   ageBand: z.enum(['TEEN_13_15', 'TEEN_16_17', 'ADULT']),
   roles: z.array(roleSchema),
+  /** False for provider-only accounts (Apple/Google); drives re-authentication prompts. */
+  hasPassword: z.boolean(),
+  /** External identities linked to the account. */
+  linkedProviders: z.array(z.enum(['APPLE', 'GOOGLE', 'FAKE'])),
   onboarding: z.object({
     completed: z.boolean(),
     nextStep: onboardingStepSchema,

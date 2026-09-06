@@ -15,6 +15,8 @@ const account = (over: Partial<AccountView> = {}): AccountView => ({
   state: 'PENDING_VERIFICATION',
   ageBand: 'ADULT',
   roles: ['USER'],
+  hasPassword: true,
+  linkedProviders: [],
   onboarding: { completed: false, nextStep: 'VERIFY_EMAIL' },
   createdAt: '2026-09-06T00:00:00.000Z',
   deletionScheduledFor: null,

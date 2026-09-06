@@ -17,10 +17,12 @@ export class AccountViewService {
   ) {}
 
   async view(account: AccountRecord, tx?: Executor): Promise<AccountView> {
-    const [roles, facts, deletion] = await Promise.all([
+    const [roles, facts, deletion, credential, identities] = await Promise.all([
       this.accounts.activeRoles(account.id, tx),
       this.profiles.onboardingFacts(account.id, tx),
       this.lifecycle.pendingDeletion(account.id, tx),
+      this.accounts.getCredential(account.id, tx),
+      this.accounts.listIdentities(account.id, tx),
     ]);
     const nextStep = onboardingNextStep({
       emailVerified: account.emailVerifiedAt !== null,
@@ -32,6 +34,12 @@ export class AccountViewService {
     return toAccountView(
       account,
       roles,
+      {
+        hasPassword: credential !== undefined,
+        linkedProviders: identities.map(
+          (i) => i.provider as AccountView['linkedProviders'][number],
+        ),
+      },
       { completed: facts.onboardingCompletedAt !== null, nextStep },
       deletion?.scheduledFor ?? null,
     );

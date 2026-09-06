@@ -51,14 +51,13 @@ CREATE TABLE account (
     (state = 'DELETED' AND email IS NULL AND email_tombstone IS NOT NULL)
     OR (state <> 'DELETED' AND email IS NOT NULL)
   ),
+  -- ACTIVE implies a verified email (PENDING_VERIFICATION is the only unverified live state).
+  CONSTRAINT account_active_verified_check CHECK (state <> 'ACTIVE' OR email_verified_at IS NOT NULL),
   CONSTRAINT account_suspended_by_fk FOREIGN KEY (suspended_by) REFERENCES account (id) ON DELETE RESTRICT
 );
 --> statement-breakpoint
 -- Sign-in / registration lookup; case-insensitive uniqueness among live accounts.
 CREATE UNIQUE INDEX account_email_live_uidx ON account (lower(email)) WHERE deleted_at IS NULL;
---> statement-breakpoint
--- Deletion job: find due requests quickly (state + time).
-CREATE INDEX account_state_idx ON account (state);
 --> statement-breakpoint
 CREATE INDEX account_suspended_by_idx ON account (suspended_by) WHERE suspended_by IS NOT NULL;
 --> statement-breakpoint
@@ -106,20 +105,25 @@ CREATE TABLE consent_record (
   CONSTRAINT consent_record_source_check CHECK (source IN ('REGISTRATION','SETTINGS','REPROMPT','SUPPORT'))
 );
 --> statement-breakpoint
--- Latest decision per type: ORDER BY recorded_at DESC, id DESC within an account.
-CREATE INDEX consent_record_account_type_idx ON consent_record (account_id, consent_type, recorded_at DESC);
+-- Consent state/history: newest first within an account (id DESC tiebreak — UUID v7 is time-ordered).
+CREATE INDEX consent_record_account_recorded_idx ON consent_record (account_id, recorded_at DESC, id DESC);
 --> statement-breakpoint
 
 CREATE TABLE account_deletion_request (
   id             uuid PRIMARY KEY,
   account_id     uuid NOT NULL REFERENCES account (id) ON DELETE RESTRICT,
   status         text NOT NULL,
+  -- State the account was in when the request was made; restored on cancel.
+  previous_state text NOT NULL,
   reason         text,
   requested_at   timestamptz NOT NULL DEFAULT now(),
   scheduled_for  timestamptz NOT NULL,
   cancelled_at   timestamptz,
   completed_at   timestamptz,
-  CONSTRAINT account_deletion_request_status_check CHECK (status IN ('PENDING','CANCELLED','COMPLETED'))
+  CONSTRAINT account_deletion_request_status_check CHECK (status IN ('PENDING','CANCELLED','COMPLETED')),
+  CONSTRAINT account_deletion_request_previous_state_check CHECK (
+    previous_state IN ('PENDING_VERIFICATION','ACTIVE','DEACTIVATED','SUSPENDED')
+  )
 );
 --> statement-breakpoint
 -- At most one pending request per account.
@@ -205,8 +209,10 @@ CREATE TABLE verification_code (
   CONSTRAINT verification_code_attempts_check CHECK (attempts >= 0)
 );
 --> statement-breakpoint
--- Lookup of the live code for an account/purpose; resend cooldown uses created_at.
-CREATE INDEX verification_code_live_idx ON verification_code (account_id, purpose, created_at DESC) WHERE consumed_at IS NULL;
+-- At most one live code per account/purpose (issuing consumes the previous one in the same tx).
+CREATE UNIQUE INDEX verification_code_live_uidx ON verification_code (account_id, purpose) WHERE consumed_at IS NULL;
+--> statement-breakpoint
+CREATE INDEX verification_code_account_idx ON verification_code (account_id, created_at DESC);
 --> statement-breakpoint
 
 -- Registered client installations (for sessions display now, push notifications later).

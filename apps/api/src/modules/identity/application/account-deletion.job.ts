@@ -76,7 +76,10 @@ export class AccountDeletionJob {
     const next = transitionAccount(account.state, 'COMPLETE_DELETION');
     const deletedAt = new Date();
 
-    const exports = await this.lifecycle.latestExport(accountId);
+    // Collect object keys before the rows are deleted; objects are removed after commit.
+    const exportKeys = (await this.lifecycle.listExports(accountId))
+      .map((e) => e.objectKey)
+      .filter((k): k is string => k !== null);
     await this.db.transaction(async (tx) => {
       await this.sessions.deleteSessions(accountId, tx);
       await this.sessions.deleteDevices(accountId, tx);
@@ -94,6 +97,8 @@ export class AccountDeletionJob {
           emailVerifiedAt: null,
           state: next,
           deletedAt,
+          suspendedAt: null,
+          suspendedBy: null,
           suspensionReason: null,
           lastLoginAt: null,
         },
@@ -103,7 +108,7 @@ export class AccountDeletionJob {
       await this.lifecycle.completeDeletion(deletionRequestId, tx);
       await this.lifecycle.audit({ accountId, eventType: 'DELETION_COMPLETED' }, tx);
     });
-    if (exports?.objectKey) await this.storage.delete(exports.objectKey).catch(() => undefined);
+    for (const key of exportKeys) await this.storage.delete(key).catch(() => undefined);
 
     this.metrics.increment('quest.identity.deleted');
     await this.events.publish(
