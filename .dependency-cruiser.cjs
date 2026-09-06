@@ -114,6 +114,7 @@ module.exports = {
       ],
     },
     tsPreCompilationDeps: true,
+    // Also resolves the mobile `@/` alias (apps/mobile/tsconfig.json paths) via the base config.
     tsConfig: { fileName: 'tsconfig.base.json' },
     enhancedResolveOptions: {
       exportsFields: ['exports'],

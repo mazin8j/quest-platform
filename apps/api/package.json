@@ -2,7 +2,7 @@
   "name": "@quest/api",
   "version": "0.0.0",
   "private": true,
-  "description": "QUEST API — NestJS modular monolith (composition root, cross-cutting foundation, domain modules).",
+  "description": "QUEST API \u2014 NestJS modular monolith (composition root, cross-cutting foundation, domain modules).",
   "type": "commonjs",
   "main": "dist/main.js",
   "scripts": {
@@ -16,7 +16,11 @@
     "db:migrate": "tsx src/cli/migrate.ts up",
     "db:migrate:status": "tsx src/cli/migrate.ts status",
     "db:migrate:generate": "drizzle-kit generate --custom",
-    "db:reset:dev": "tsx src/cli/reset-dev-db.ts"
+    "db:reset:dev": "tsx src/cli/reset-dev-db.ts",
+    "openapi:generate": "tsx src/cli/openapi.ts",
+    "identity:grant-role": "tsx src/cli/identity.ts grant-role",
+    "identity:process-deletions": "tsx src/cli/identity.ts process-deletions",
+    "identity:process-exports": "tsx src/cli/identity.ts process-exports"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
@@ -27,6 +31,7 @@
     "@nestjs/platform-express": "^12.0.1",
     "@nestjs/terminus": "^12.0.0",
     "@nestjs/throttler": "^6.5.0",
+    "@node-rs/argon2": "^2.2.0",
     "@opentelemetry/api": "^1.9.1",
     "@quest/ai": "workspace:*",
     "@quest/config": "workspace:*",
@@ -35,6 +40,7 @@
     "drizzle-orm": "^0.45.2",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
+    "jose": "^6.2.12",
     "nestjs-pino": "^5.1.0",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
@@ -53,7 +59,8 @@
     "pino-pretty": "^13.1.3",
     "supertest": "^7.2.2",
     "tsx": "^4.23.13",
-    "unplugin-swc": "^1.5.11"
+    "unplugin-swc": "^1.5.11",
+    "@quest/api-client": "workspace:*"
   },
   "files": [
     "dist",

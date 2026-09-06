@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 
+import { Public } from '../common/auth/decorators';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { DATABASE_POOL } from '../infrastructure/database/database.module';
 import {
@@ -44,6 +45,7 @@ async function timed<T>(
  * Both are version-neutral so orchestrators never need to know the API version.
  */
 @Controller({ path: '', version: VERSION_NEUTRAL })
+@Public()
 export class HealthController {
   private readonly startedAt = Date.now();
 

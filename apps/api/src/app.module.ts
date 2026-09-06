@@ -5,15 +5,18 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { buildLoggerParams } from './common/logging/logger-params';
-import { METRICS, NoopMetrics } from './common/observability/metrics.port';
+import { MetricsModule } from './common/observability/metrics.module';
 import { APP_CONFIG, type AppConfig } from './config/app-config';
 import { AppConfigModule } from './config/config.module';
 import { HealthModule } from './health/health.module';
 import { AiModule } from './infrastructure/ai/ai.module';
+import { DataExportModule } from './infrastructure/data-export/data-export.module';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { EventsModule } from './infrastructure/events/events.module';
 import { ObjectStorageModule } from './infrastructure/object-storage/object-storage.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { IdentityModule } from './modules/identity';
+import { ProfilesModule } from './modules/profiles';
 import { SystemModule } from './modules/system';
 import { TrustSafetyModule } from './modules/trust-safety';
 
@@ -25,6 +28,7 @@ import { TrustSafetyModule } from './modules/trust-safety';
 @Module({
   imports: [
     AppConfigModule.forRoot(),
+    MetricsModule,
     LoggerModule.forRootAsync({
       useFactory: (config: AppConfig) => buildLoggerParams(config),
       inject: [APP_CONFIG],
@@ -52,15 +56,17 @@ import { TrustSafetyModule } from './modules/trust-safety';
     ObjectStorageModule,
     EventsModule,
     AiModule,
+    DataExportModule,
     HealthModule,
     // ---- domain modules ----
     SystemModule,
     TrustSafetyModule,
+    ProfilesModule,
+    IdentityModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ApiExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: METRICS, useClass: NoopMetrics },
   ],
 })
 export class AppModule {}

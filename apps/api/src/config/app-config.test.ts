@@ -7,6 +7,7 @@ const valid = {
   DATABASE_URL: 'postgresql://quest:quest@localhost:5432/quest',
   REDIS_URL: 'redis://localhost:6379',
   S3_BUCKET: 'quest-media-local',
+  AUTH_JWT_SECRET: 'unit-test-only-secret-0123456789abcdef0123456789',
 };
 
 describe('API configuration validation', () => {
@@ -72,5 +73,24 @@ describe('API configuration validation', () => {
     } catch (e) {
       expect((e as Error).message).not.toContain('supersecretpassword');
     }
+  });
+
+  it('requires an access-token secret and refuses dev-only identity switches in production', () => {
+    expect(() => loadAppConfig({ ...valid, AUTH_JWT_SECRET: 'short' })).toThrow(/AUTH_JWT_SECRET/);
+    expect(loadAppConfig({ ...valid, AUTH_JWT_SECRET_PREVIOUS: '' }).AUTH_JWT_SECRET_PREVIOUS).toBe(
+      undefined,
+    );
+    const prod = { ...valid, NODE_ENV: 'production', DATABASE_SSL: 'true' };
+    expect(() => loadAppConfig({ ...prod, AUTH_FAKE_PROVIDER_ENABLED: 'true' })).toThrow(
+      /AUTH_FAKE_PROVIDER_ENABLED/,
+    );
+    expect(() => loadAppConfig({ ...prod, AUTH_DEV_EXPOSE_CODES: 'true' })).toThrow(
+      /AUTH_DEV_EXPOSE_CODES/,
+    );
+    expect(() => loadAppConfig({ ...prod, MAIL_PROVIDER: 'memory' })).toThrow(/MAIL_PROVIDER/);
+    expect(() =>
+      loadAppConfig({ ...prod, AUTH_JWT_SECRET_PREVIOUS: valid.AUTH_JWT_SECRET }),
+    ).toThrow(/AUTH_JWT_SECRET_PREVIOUS/);
+    expect(loadAppConfig(prod).AUTH_ACCESS_TOKEN_TTL_SECONDS).toBe(900);
   });
 });
