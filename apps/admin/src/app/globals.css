@@ -121,3 +121,51 @@ a {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Phase 01: simple forms for staff sign-in and support actions. */
+.q-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+.q-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+.q-form input {
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--q-border, #cbd5e1);
+  border-radius: 0.5rem;
+  font: inherit;
+}
+.q-form button,
+.q-link-button {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.q-inline-form {
+  display: inline;
+}
+.q-link-button {
+  background: transparent;
+  color: inherit;
+  min-height: auto;
+  padding: 0;
+}
+.q-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+.q-dl dt {
+  font-weight: 600;
+}
+.q-dl dd {
+  margin: 0;
+}
