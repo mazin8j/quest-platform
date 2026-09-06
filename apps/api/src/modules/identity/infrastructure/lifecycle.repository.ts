@@ -1,16 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { AccountState, DataExportStatus, DeletionRequestStatus } from '@quest/types';
-import { and, desc, eq, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, lte, ne, or, sql } from 'drizzle-orm';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import type { Executor } from '../../../infrastructure/database/executor';
 import {
+  account,
   accountDeletionRequest,
   dataExportRequest,
   identityAuditLedger,
   verificationCode,
-} from '../../../infrastructure/database/schema';
+} from '../../../infrastructure/database/schema/identity';
 
 export type VerificationPurpose = 'VERIFY_EMAIL' | 'RESET_PASSWORD';
 
@@ -213,34 +214,66 @@ export class LifecycleRepository {
     return toDeletion(row);
   }
 
-  async cancelDeletion(id: string, tx?: Executor): Promise<void> {
-    await this.exec(tx)
+  /** Cancels a pending request. Returns false when it was no longer pending (audit P01-01). */
+  async cancelDeletion(id: string, tx?: Executor): Promise<boolean> {
+    const rows = await this.exec(tx)
       .update(accountDeletionRequest)
-      .set({ status: 'CANCELLED', cancelledAt: new Date() })
-      .where(and(eq(accountDeletionRequest.id, id), eq(accountDeletionRequest.status, 'PENDING')));
+      .set({ status: 'CANCELLED', cancelledAt: new Date(), reason: null })
+      .where(and(eq(accountDeletionRequest.id, id), eq(accountDeletionRequest.status, 'PENDING')))
+      .returning({ id: accountDeletionRequest.id });
+    return rows.length > 0;
   }
 
-  async completeDeletion(id: string, tx?: Executor): Promise<void> {
-    await this.exec(tx)
+  /**
+   * Marks a pending request COMPLETED. Returns false when it is no longer pending — the caller
+   * must abort the cascade, because the user cancelled it after the job picked it up (P01-01).
+   */
+  async completeDeletion(id: string, tx?: Executor): Promise<boolean> {
+    const rows = await this.exec(tx)
       .update(accountDeletionRequest)
       .set({ status: 'COMPLETED', completedAt: new Date(), reason: null })
-      .where(eq(accountDeletionRequest.id, id));
+      .where(and(eq(accountDeletionRequest.id, id), eq(accountDeletionRequest.status, 'PENDING')))
+      .returning({ id: accountDeletionRequest.id });
+    return rows.length > 0;
   }
 
-  /** Deletion job input: pending requests whose grace period has elapsed. */
+  /**
+   * Deletion job input: pending requests whose grace period has elapsed **and** whose account is
+   * still in DELETION_REQUESTED. Requests paused by a suspension are excluded here (audit P01-06)
+   * so they cannot occupy the whole batch window and starve genuinely due deletions;
+   * `pausedDeletions` reports them for operator follow-up.
+   */
   async dueDeletions(now: Date, limit: number, tx?: Executor): Promise<DeletionRequestRecord[]> {
     const rows = await this.exec(tx)
-      .select()
+      .select({ request: accountDeletionRequest })
       .from(accountDeletionRequest)
+      .innerJoin(account, eq(account.id, accountDeletionRequest.accountId))
       .where(
         and(
           eq(accountDeletionRequest.status, 'PENDING'),
           lte(accountDeletionRequest.scheduledFor, now),
+          eq(account.state, 'DELETION_REQUESTED'),
         ),
       )
       .orderBy(accountDeletionRequest.scheduledFor)
       .limit(limit);
-    return rows.map(toDeletion);
+    return rows.map((r) => toDeletion(r.request));
+  }
+
+  /** Pending requests past their date whose account left DELETION_REQUESTED (paused erasures). */
+  async pausedDeletions(now: Date, tx?: Executor): Promise<number> {
+    const rows = await this.exec(tx)
+      .select({ id: accountDeletionRequest.id })
+      .from(accountDeletionRequest)
+      .innerJoin(account, eq(account.id, accountDeletionRequest.accountId))
+      .where(
+        and(
+          eq(accountDeletionRequest.status, 'PENDING'),
+          lte(accountDeletionRequest.scheduledFor, now),
+          ne(account.state, 'DELETION_REQUESTED'),
+        ),
+      );
+    return rows.length;
   }
 
   // ---- data export requests ----

@@ -40,15 +40,17 @@ import {
   principalFromRequest,
 } from '../../../common/auth/decorators';
 import type { Principal } from '../../../common/auth/principal';
+import {
+  type ListPageQuery,
+  decodeCursor,
+  listPageQuerySchema,
+  toPage,
+} from '../../../common/pagination/cursor-page';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { ProfileService } from '../application/profile.service';
 
 const usernameParam = z.string().min(1).max(64);
 const availabilityQuery = z.object({ username: z.string().min(1).max(64) });
-
-function page<T>(data: T[]): Paginated<T> {
-  return { data, pageInfo: { nextCursor: null, hasMore: false } };
-}
 
 /** Own profile, onboarding, privacy and block controls. All routes require a principal. */
 @Controller({ path: 'me', version: '1' })
@@ -134,8 +136,16 @@ export class MeProfileController {
 
   @Get('blocks')
   @RequirePermission(Permission.MANAGE_OWN_BLOCKS)
-  async listBlocks(@CurrentPrincipal() principal: Principal): Promise<Paginated<BlockView>> {
-    return page(await this.profiles.listBlocks(principal));
+  async listBlocks(
+    @CurrentPrincipal() principal: Principal,
+    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQuery,
+  ): Promise<Paginated<BlockView>> {
+    const cursor = decodeCursor(query.cursor);
+    const rows = await this.profiles.listBlocks(principal, {
+      limit: query.limit + 1,
+      cursor: cursor ? { blockedAt: cursor.at, accountId: cursor.id } : undefined,
+    });
+    return toPage(rows, query.limit, (r) => ({ at: new Date(r.blockedAt), id: r.accountId }));
   }
 
   @Post('blocks')

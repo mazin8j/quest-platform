@@ -25,6 +25,15 @@ export const appConfigSchema = z
     CORS_ALLOWED_ORIGINS: csvListSchema,
     RATE_LIMIT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
     RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(120),
+    /**
+     * Number of trusted reverse-proxy hops in front of the API (Express `trust proxy`). Every
+     * rate limit is keyed on the resulting client IP, so this must equal the real topology:
+     * 0 when the API is exposed directly, 1 behind a single load balancer, 2 behind
+     * CloudFront → ALB (the AWS deployment — audit P01-09). Too low keys the limits on the
+     * proxy's own address (one shared bucket per edge location); too high trusts a
+     * client-supplied `X-Forwarded-For` entry.
+     */
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
 
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),

@@ -94,6 +94,35 @@ export function canTransitionAccount(from: AccountState, transition: AccountTran
   return nextAccountState(from, transition) !== undefined;
 }
 
+/**
+ * Target state when a pending deletion request is cancelled (audit P01-05).
+ *
+ * `CANCEL_DELETION` in the table above nominally leads to ACTIVE, but the real target is the state
+ * the request was made from: a never-verified account must stay PENDING_VERIFICATION (the DB check
+ * `account_active_verified_check` forbids an unverified ACTIVE account), a suspended one stays
+ * SUSPENDED, and a deactivated one stays DEACTIVATED — cancelling an erasure must not silently
+ * republish a profile the user had hidden. This function is the single definition of that rule;
+ * services must not re-derive it.
+ */
+export function stateAfterDeletionCancelled(
+  previousState: AccountState,
+  emailVerified: boolean,
+): AccountState {
+  if (previousState === S.SUSPENDED) return S.SUSPENDED;
+  if (previousState === S.DEACTIVATED) return S.DEACTIVATED;
+  if (previousState === S.PENDING_VERIFICATION || !emailVerified) return S.PENDING_VERIFICATION;
+  return S.ACTIVE;
+}
+
+/**
+ * Target state when staff reinstate a suspended account (audit P01-05): an account that never
+ * verified its email returns to PENDING_VERIFICATION, not ACTIVE. A pending deletion request is
+ * handled by the caller through `RESUME_DELETION`.
+ */
+export function stateAfterReinstated(emailVerified: boolean): AccountState {
+  return emailVerified ? S.ACTIVE : S.PENDING_VERIFICATION;
+}
+
 /** States in which a user may obtain or keep a session. */
 export const SIGN_IN_ALLOWED_STATES: ReadonlySet<AccountState> = new Set([
   S.PENDING_VERIFICATION,

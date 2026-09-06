@@ -12,7 +12,6 @@ import {
   type EventPublisher,
 } from '@quest/events';
 import {
-  type AccountState,
   type AccountSupportView,
   type AccountView,
   type ConsentRecord,
@@ -23,12 +22,16 @@ import {
   type RecordConsentRequest,
   type Role,
   STAFF_ROLES,
+  hasPermission,
+  stateAfterDeletionCancelled,
+  stateAfterReinstated,
 } from '@quest/types';
 
 import type { Principal } from '../../../common/auth/principal';
 import { getRequestContext } from '../../../common/context/request-context';
 import { ApiError } from '../../../common/filters/api-error';
 import { uuidv7 } from '../../../common/ids/uuid-v7';
+import { isUniqueViolation } from '../../../common/persistence/unique-violation';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -81,8 +84,11 @@ export class AccountService {
 
   // ------------------------------------------------------------------------------ consents ----
 
-  async consentHistory(accountId: string): Promise<ConsentRecord[]> {
-    const rows = await this.accounts.listConsents(accountId);
+  async consentHistory(
+    accountId: string,
+    page: { limit: number; cursor?: { recordedAt: Date; id: string } },
+  ): Promise<ConsentRecord[]> {
+    const rows = await this.accounts.listConsents(accountId, page);
     return rows.map((r) => ({
       consentId: r.id,
       type: r.consentType,
@@ -94,7 +100,7 @@ export class AccountService {
   }
 
   async consentState(accountId: string): Promise<ConsentState> {
-    const rows = await this.accounts.listConsents(accountId); // newest first
+    const rows = await this.accounts.latestConsentPerType(accountId);
     const current: ConsentState['current'] = {};
     for (const r of rows) {
       if (!current[r.consentType]) {
@@ -204,27 +210,34 @@ export class AccountService {
     }
     const next = transitionAccount(account.state, 'REQUEST_DELETION');
     const scheduledFor = new Date(Date.now() + DELETION_GRACE_DAYS * DAY_MS);
-    const { request, revoked } = await this.db.transaction(async (tx) => {
-      const request = await this.lifecycle.createDeletion(
-        {
-          accountId: account.id,
-          previousState: account.state,
-          scheduledFor,
-          reason: input.reason ?? null,
-        },
-        tx,
-      );
-      await this.accounts.update(account.id, { state: next }, tx);
-      await this.profiles.setAccountActive(account.id, false, tx);
-      await this.lifecycle.audit({ accountId: account.id, eventType: 'DELETION_REQUESTED' }, tx);
-      const revoked = await this.sessions.revokeAll(
-        account.id,
-        'DELETION_REQUESTED',
-        principal.sessionId,
-        tx,
-      );
-      return { request, revoked };
-    });
+    const { request, revoked } = await this.db
+      .transaction(async (tx) => {
+        const request = await this.lifecycle.createDeletion(
+          {
+            accountId: account.id,
+            previousState: account.state,
+            scheduledFor,
+            reason: input.reason ?? null,
+          },
+          tx,
+        );
+        await this.accounts.update(account.id, { state: next }, tx);
+        await this.profiles.setAccountActive(account.id, false, tx);
+        await this.lifecycle.audit({ accountId: account.id, eventType: 'DELETION_REQUESTED' }, tx);
+        const revoked = await this.sessions.revokeAll(
+          account.id,
+          'DELETION_REQUESTED',
+          principal.sessionId,
+          tx,
+        );
+        return { request, revoked };
+      })
+      .catch((error: unknown) => {
+        // `account_deletion_request_pending_uidx`: a second concurrent request is a conflict,
+        // not a 500 (audit P01-08).
+        if (isUniqueViolation(error)) throw ApiError.conflict('A deletion request is already open');
+        throw error;
+      });
     this.metrics.increment('quest.identity.deletion_requested');
     if (account.email) {
       await this.mailer.send({
@@ -259,22 +272,31 @@ export class AccountService {
     const pending = await this.lifecycle.pendingDeletion(account.id);
     if (!pending) throw ApiError.notFound('Deletion request');
     transitionAccount(account.state, 'CANCEL_DELETION');
-    // Restore the state the request was made from: an unverified account stays unverified, a
-    // suspended one stays suspended; a deactivated one is reactivated by this very sign-in.
-    const next: AccountState =
-      pending.previousState === 'PENDING_VERIFICATION' && !account.emailVerifiedAt
-        ? 'PENDING_VERIFICATION'
-        : pending.previousState === 'SUSPENDED'
-          ? 'SUSPENDED'
-          : 'ACTIVE';
-    await this.db.transaction(async (tx) => {
-      await this.lifecycle.cancelDeletion(pending.id, tx);
-      await this.accounts.update(account.id, { state: next }, tx);
+    // The restore target is defined once, in the state machine (audit P01-05): an unverified
+    // account stays unverified, a suspended one stays suspended and a deactivated one stays
+    // hidden — cancelling an erasure never republishes a profile the user had taken down.
+    const next = stateAfterDeletionCancelled(
+      pending.previousState,
+      account.emailVerifiedAt !== null,
+    );
+    const cancelled = await this.db.transaction(async (tx) => {
+      // The job may have claimed this request while the request was in flight; if it did, the
+      // account is being erased and there is nothing left to cancel (audit P01-01).
+      const locked = await this.accounts.findByIdForUpdate(account.id, tx);
+      if (!locked || locked.state !== 'DELETION_REQUESTED') return false;
+      if (!(await this.lifecycle.cancelDeletion(pending.id, tx))) return false;
+      await this.accounts.update(
+        account.id,
+        { state: next, deactivatedAt: next === 'DEACTIVATED' ? locked.deactivatedAt : null },
+        tx,
+      );
       await this.profiles.setAccountActive(account.id, next === 'ACTIVE', tx);
       await this.lifecycle.audit({ accountId: account.id, eventType: 'DELETION_CANCELLED' }, tx);
       if (next === 'SUSPENDED')
         await this.sessions.revokeAll(account.id, 'SUSPENDED', undefined, tx);
+      return true;
     });
+    if (!cancelled) throw ApiError.conflict('The deletion request is no longer cancellable');
     this.metrics.increment('quest.identity.deletion_cancelled');
     await this.events.publish(
       createEvent(
@@ -320,13 +342,25 @@ export class AccountService {
     };
   }
 
-  async suspend(staff: Principal, accountId: string, reason: string): Promise<AccountSupportView> {
+  /**
+   * Staff-on-staff sanctions need `MANAGE_STAFF` (audit P01-07): SANCTION_USER exists to police
+   * users, not colleagues — without this a single compromised moderator account could suspend the
+   * whole Trust & Safety function.
+   */
+  private async assertMaySanction(staff: Principal, accountId: string): Promise<void> {
     if (staff.accountId === accountId)
-      throw ApiError.validation([{ path: 'accountId', message: 'Cannot suspend yourself' }]);
-    const account = await this.requireAccount(accountId);
-    const roles = await this.accounts.activeRoles(account.id);
+      throw ApiError.validation([{ path: 'accountId', message: 'Cannot sanction yourself' }]);
+    const roles = await this.accounts.activeRoles(accountId);
     if (roles.includes('SUPER_ADMIN'))
-      throw ApiError.forbidden('Super admins cannot be suspended through the API');
+      throw ApiError.forbidden('Super admins cannot be sanctioned through the API');
+    const targetIsStaff = roles.some((role) => STAFF_ROLES.includes(role));
+    if (targetIsStaff && !hasPermission(staff.roles, 'MANAGE_STAFF'))
+      throw ApiError.forbidden('Sanctioning a staff account requires the staff-management role');
+  }
+
+  async suspend(staff: Principal, accountId: string, reason: string): Promise<AccountSupportView> {
+    await this.assertMaySanction(staff, accountId);
+    const account = await this.requireAccount(accountId);
     const next = transitionAccount(account.state, 'SUSPEND');
     const revoked = await this.db.transaction(async (tx) => {
       await this.accounts.update(
@@ -365,16 +399,26 @@ export class AccountService {
   }
 
   async reinstate(staff: Principal, accountId: string): Promise<AccountSupportView> {
+    await this.assertMaySanction(staff, accountId);
     const account = await this.requireAccount(accountId);
     // A deletion request paused by the suspension resumes; otherwise the account becomes usable.
     const pending = await this.lifecycle.pendingDeletion(account.id);
-    const next = transitionAccount(account.state, pending ? 'RESUME_DELETION' : 'REINSTATE');
-    const usable = next === 'ACTIVE' && account.emailVerifiedAt !== null;
+    const transitioned = transitionAccount(
+      account.state,
+      pending ? 'RESUME_DELETION' : 'REINSTATE',
+    );
+    // REINSTATE nominally targets ACTIVE; an account that never verified its email returns to
+    // PENDING_VERIFICATION instead (audit P01-05 — the rule lives in the state machine).
+    const next =
+      transitioned === 'ACTIVE'
+        ? stateAfterReinstated(account.emailVerifiedAt !== null)
+        : transitioned;
+    const usable = next === 'ACTIVE';
     await this.db.transaction(async (tx) => {
       await this.accounts.update(
         account.id,
         {
-          state: usable || next !== 'ACTIVE' ? next : 'PENDING_VERIFICATION',
+          state: next,
           suspendedAt: null,
           suspendedBy: null,
           suspensionReason: null,

@@ -43,6 +43,8 @@ import {
   usernameAvailabilityResponseSchema,
   verifyEmailRequestSchema,
 } from '@quest/types';
+
+import { listPageQuerySchema } from '../common/pagination/cursor-page';
 import { z } from 'zod';
 
 /**
@@ -291,9 +293,10 @@ export const ROUTES: ReadonlyArray<RouteDescriptor> = [
     method: 'GET',
     path: '/v1/me/consents/history',
     tag: 'account',
-    summary: 'Consent history (append-only)',
+    summary: 'Consent history (append-only, keyset-paged)',
     auth: ['MANAGE_OWN_ACCOUNT'],
     states: GRACE,
+    query: listPageQuerySchema,
     responses: { 200: consentHistorySchema },
   },
   {
@@ -455,6 +458,7 @@ export const ROUTES: ReadonlyArray<RouteDescriptor> = [
     tag: 'privacy',
     summary: 'Blocked accounts',
     auth: ['MANAGE_OWN_BLOCKS'],
+    query: listPageQuerySchema,
     responses: { 200: blockListSchema },
   },
   {

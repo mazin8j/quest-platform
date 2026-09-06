@@ -40,6 +40,9 @@ interface OidcProviderOptions {
  * OpenID Connect id_token verification for Apple and Google against their published JWKS.
  * No client secret is needed for token verification; the client id (audience) is configuration.
  */
+/** Maximum accepted age of a provider id_token (seconds). */
+const OIDC_MAX_TOKEN_AGE_S = 300;
+
 export class OidcIdentityProvider implements IdentityProviderPort {
   readonly provider: IdentityProvider;
   private readonly jwks: JWTVerifyGetKey;
@@ -55,6 +58,10 @@ export class OidcIdentityProvider implements IdentityProviderPort {
         issuer: this.options.issuer,
         audience: this.options.audience,
         algorithms: ['RS256', 'ES256'],
+        // An id_token is a fresh sign-in proof, not a bearer credential: one captured from a log
+        // or a shared client id must not stay usable for the provider's full hour (audit P01-11).
+        // Nonce binding needs a client round-trip and is tracked as TD-30.
+        maxTokenAge: OIDC_MAX_TOKEN_AGE_S,
       });
       if (typeof payload.sub !== 'string' || payload.sub.length === 0) return null;
       const rawEmail = typeof payload.email === 'string' ? payload.email : null;

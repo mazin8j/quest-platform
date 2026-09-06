@@ -24,6 +24,8 @@ import {
   privacyPolicyViolations,
   registerRequestSchema,
   rolePermissions,
+  stateAfterDeletionCancelled,
+  stateAfterReinstated,
   timezoneSchema,
   updateInterestsRequestSchema,
   usernameSchema,
@@ -57,6 +59,22 @@ describe('account lifecycle state machine', () => {
     expect(canTransitionAccount('SUSPENDED', 'DEACTIVATE')).toBe(false);
     expect(canTransitionAccount('SUSPENDED', 'REACTIVATE')).toBe(false);
     expect(canTransitionAccount('PENDING_VERIFICATION', 'DEACTIVATE')).toBe(false);
+  });
+
+  it('restores the pre-request state when a deletion is cancelled (audit P01-05)', () => {
+    // The DB check `account_active_verified_check` forbids an unverified ACTIVE account, and a
+    // hidden (deactivated) or suspended account must not be republished by a cancellation.
+    expect(stateAfterDeletionCancelled('ACTIVE', true)).toBe('ACTIVE');
+    expect(stateAfterDeletionCancelled('ACTIVE', false)).toBe('PENDING_VERIFICATION');
+    expect(stateAfterDeletionCancelled('PENDING_VERIFICATION', false)).toBe('PENDING_VERIFICATION');
+    expect(stateAfterDeletionCancelled('PENDING_VERIFICATION', true)).toBe('PENDING_VERIFICATION');
+    expect(stateAfterDeletionCancelled('SUSPENDED', true)).toBe('SUSPENDED');
+    expect(stateAfterDeletionCancelled('DEACTIVATED', true)).toBe('DEACTIVATED');
+  });
+
+  it('reinstates an unverified account to PENDING_VERIFICATION (audit P01-05)', () => {
+    expect(stateAfterReinstated(true)).toBe('ACTIVE');
+    expect(stateAfterReinstated(false)).toBe('PENDING_VERIFICATION');
   });
 
   it('never lets a suspended account sign in, and covers every state in the table', () => {

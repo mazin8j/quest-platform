@@ -30,6 +30,8 @@ const DAY_MS = 86_400_000;
 const DOWNLOAD_URL_TTL_S = 900;
 /** A PROCESSING item older than this is considered abandoned by a crashed worker and re-picked. */
 const PROCESSING_STALE_MS = 15 * 60_000;
+/** Bound on the consent ledger copied into a bundle (audit P01-14); older rows on request. */
+const EXPORT_MAX_CONSENT_ROWS = 1000;
 
 /**
  * User-data export (right of access / portability). Requests are recorded synchronously and
@@ -113,10 +115,14 @@ export class DataExportService implements OnModuleInit {
           { exportId: record.id, err: error instanceof Error ? error.message : String(error) },
           'data export failed',
         );
+        // A partially written bundle must not survive the failure (P01-03).
+        const current = await this.lifecycle.findExport(record.accountId, record.id);
+        if (current?.objectKey) await this.deleteObject(current.objectKey, record.accountId);
         await this.lifecycle.updateExport(record.id, {
           status: 'FAILED',
           failureReason: 'INTERNAL',
           completedAt: new Date(),
+          objectKey: null,
         });
         await this.lifecycle.audit({ accountId: record.accountId, eventType: 'EXPORT_FAILED' });
       }
@@ -129,20 +135,36 @@ export class DataExportService implements OnModuleInit {
     const due = await this.lifecycle.expiredReadyExports(now, limit);
     for (const record of due) {
       await this.lifecycle.updateExport(record.id, { status: 'EXPIRED' });
-      if (record.objectKey) await this.storage.delete(record.objectKey).catch(() => undefined);
+      if (record.objectKey) await this.deleteObject(record.objectKey, record.accountId);
     }
     return due.length;
   }
 
-  /** Deletion cascade helper: removes every bundle object the account ever produced. */
-  async deleteAllObjectsFor(accountId: string): Promise<void> {
-    for (const record of await this.lifecycle.listExports(accountId)) {
-      if (record.objectKey) await this.storage.delete(record.objectKey).catch(() => undefined);
+  /**
+   * Erasure of a bundle object. Never throws (the row is already gone or updated) but never fails
+   * silently either — an undeleted bundle is retained personal data and needs a sweep (P01-04).
+   */
+  private async deleteObject(objectKey: string, accountId: string): Promise<void> {
+    try {
+      await this.storage.delete(objectKey);
+    } catch (error) {
+      this.metrics.increment('quest.identity.storage.erase_failed');
+      this.logger.error(
+        { accountId, objectKey, err: error instanceof Error ? error.message : String(error) },
+        'object storage erase failed for a data export bundle',
+      );
     }
   }
 
   async fulfil(record: DataExportRecord): Promise<void> {
-    await this.lifecycle.updateExport(record.id, { status: 'PROCESSING', startedAt: new Date() });
+    // The key is recorded before a single byte is written, so an interrupted run can never leave
+    // a bundle in storage that no row points at — an orphan nothing would ever delete (P01-03).
+    const objectKey = `exports/${record.accountId}/${record.id}.json`;
+    await this.lifecycle.updateExport(record.id, {
+      status: 'PROCESSING',
+      startedAt: new Date(),
+      objectKey,
+    });
     const sections = [];
     for (const contributor of this.registry.contributors()) {
       sections.push({
@@ -157,7 +179,6 @@ export class DataExportService implements OnModuleInit {
       generatedAt: new Date().toISOString(),
       sections,
     });
-    const objectKey = `exports/${record.accountId}/${record.id}.json`;
     await this.storage.putObject({
       objectKey,
       body: JSON.stringify(bundle, null, 2),
@@ -189,7 +210,7 @@ export class DataExportService implements OnModuleInit {
     const [roles, identities, consents, sessions, devices, audit] = await Promise.all([
       this.accounts.activeRoles(accountId),
       this.accounts.listIdentities(accountId),
-      this.accounts.listConsents(accountId),
+      this.accounts.listConsents(accountId, { limit: EXPORT_MAX_CONSENT_ROWS }),
       this.sessions.listLiveSessions(accountId),
       this.sessions.listDevices(accountId),
       this.lifecycle.listAudit(accountId, 500),
@@ -242,7 +263,7 @@ export class DataExportService implements OnModuleInit {
   private async expireIfDue(record: DataExportRecord): Promise<DataExportRecord> {
     if (record.status === 'READY' && record.expiresAt && record.expiresAt.getTime() <= Date.now()) {
       await this.lifecycle.updateExport(record.id, { status: 'EXPIRED' });
-      if (record.objectKey) await this.storage.delete(record.objectKey).catch(() => undefined);
+      if (record.objectKey) await this.deleteObject(record.objectKey, record.accountId);
       return { ...record, status: 'EXPIRED' };
     }
     return record;

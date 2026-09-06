@@ -17,7 +17,7 @@ import {
   accountIdentity,
   accountRole,
   consentRecord,
-} from '../../../infrastructure/database/schema';
+} from '../../../infrastructure/database/schema/identity';
 import type { AccountRecord } from '../domain/account';
 
 export interface NewAccount {
@@ -34,6 +34,15 @@ export interface CredentialRecord {
   passwordChangedAt: Date;
   failedAttempts: number;
   lockedUntil: Date | null;
+}
+
+interface ConsentRawRow {
+  id: string;
+  consent_type: ConsentType;
+  document_version: string | null;
+  granted: boolean;
+  source: ConsentSource;
+  recorded_at: string | Date;
 }
 
 export interface ConsentRow {
@@ -59,6 +68,16 @@ export class AccountRepository {
 
   async findById(id: string, tx?: Executor): Promise<AccountRecord | undefined> {
     const rows = await this.exec(tx).select().from(account).where(eq(account.id, id)).limit(1);
+    return rows[0] ? toRecord(rows[0]) : undefined;
+  }
+
+  /**
+   * Row-locking read for lifecycle writers that must not race a concurrent state change
+   * (audit P01-01: the deletion job and a user cancellation both mutate the same row).
+   * Requires a transaction executor — `FOR UPDATE` outside one holds no lock.
+   */
+  async findByIdForUpdate(id: string, tx: Executor): Promise<AccountRecord | undefined> {
+    const rows = await tx.select().from(account).where(eq(account.id, id)).limit(1).for('update');
     return rows[0] ? toRecord(rows[0]) : undefined;
   }
 
@@ -153,11 +172,14 @@ export class AccountRepository {
     lockMinutes: number,
     tx?: Executor,
   ): Promise<number> {
+    // A lapsed lock starts a fresh count: without this the counter stays at the maximum and the
+    // next single typo re-locks the account immediately, forever (audit P01-10).
+    const lapsed = sql`(${accountCredential.lockedUntil} IS NOT NULL AND ${accountCredential.lockedUntil} <= now())`;
     const rows = await this.exec(tx)
       .update(accountCredential)
       .set({
-        failedAttempts: sql`${accountCredential.failedAttempts} + 1`,
-        lockedUntil: sql`CASE WHEN ${accountCredential.failedAttempts} + 1 >= ${maxFailures} THEN now() + make_interval(mins => ${lockMinutes}) ELSE ${accountCredential.lockedUntil} END`,
+        failedAttempts: sql`CASE WHEN ${lapsed} THEN 1 ELSE ${accountCredential.failedAttempts} + 1 END`,
+        lockedUntil: sql`CASE WHEN ${lapsed} THEN NULL WHEN ${accountCredential.failedAttempts} + 1 >= ${maxFailures} THEN now() + make_interval(mins => ${lockMinutes}) ELSE ${accountCredential.lockedUntil} END`,
       })
       .where(eq(accountCredential.accountId, accountId))
       .returning({ failedAttempts: accountCredential.failedAttempts });
@@ -302,20 +324,51 @@ export class AccountRepository {
       );
   }
 
-  async listConsents(accountId: string, tx?: Executor): Promise<ConsentRow[]> {
+  /**
+   * Current consent per type: one row each, newest first (audit P01-14). Reading the whole ledger
+   * to compute this would be unbounded and, once paged, wrong.
+   */
+  async latestConsentPerType(accountId: string, tx?: Executor): Promise<ConsentRow[]> {
+    const rows = await this.exec(tx).execute(sql`
+      SELECT DISTINCT ON (consent_type) id, consent_type, document_version, granted, source, recorded_at
+      FROM consent_record
+      WHERE account_id = ${accountId}
+      ORDER BY consent_type, recorded_at DESC, id DESC
+    `);
+    const list = (rows as unknown as { rows?: unknown[] }).rows ?? (rows as unknown as unknown[]);
+    return (list as ConsentRawRow[]).map((r) => ({
+      id: r.id,
+      consentType: r.consent_type,
+      documentVersion: r.document_version,
+      granted: r.granted,
+      source: r.source,
+      recordedAt: new Date(r.recorded_at),
+    }));
+  }
+
+  /**
+   * Consent history, newest first. Always bounded (audit P01-14): the ledger is append-only and
+   * grows for the life of the account, so an unbounded read is a self-inflicted DoS. `cursor` is
+   * the (recordedAt, id) pair of the last row of the previous page.
+   */
+  async listConsents(
+    accountId: string,
+    page: { limit: number; cursor?: { recordedAt: Date; id: string } },
+    tx?: Executor,
+  ): Promise<ConsentRow[]> {
+    const where = page.cursor
+      ? and(
+          eq(consentRecord.accountId, accountId),
+          sql`(${consentRecord.recordedAt}, ${consentRecord.id}) < (${page.cursor.recordedAt.toISOString()}::timestamptz, ${page.cursor.id}::uuid)`,
+        )
+      : eq(consentRecord.accountId, accountId);
     const rows = await this.exec(tx)
       .select()
       .from(consentRecord)
-      .where(eq(consentRecord.accountId, accountId))
-      .orderBy(desc(consentRecord.recordedAt), desc(consentRecord.id));
-    return rows.map((r) => ({
-      id: r.id,
-      consentType: r.consentType as ConsentType,
-      documentVersion: r.documentVersion,
-      granted: r.granted,
-      source: r.source as ConsentSource,
-      recordedAt: r.recordedAt,
-    }));
+      .where(where)
+      .orderBy(desc(consentRecord.recordedAt), desc(consentRecord.id))
+      .limit(page.limit);
+    return rows as ConsentRow[];
   }
 }
 

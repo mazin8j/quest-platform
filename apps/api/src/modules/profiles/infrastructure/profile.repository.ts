@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ChallengeInvitesFrom, LocationVisibility, ProfileVisibility } from '@quest/types';
-import { and, asc, count, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import type { Executor } from '../../../infrastructure/database/executor';
@@ -10,7 +10,7 @@ import {
   interest,
   privacySettings,
   profile,
-} from '../../../infrastructure/database/schema';
+} from '../../../infrastructure/database/schema/profiles';
 
 export interface ProfileRecord {
   accountId: string;
@@ -227,10 +227,21 @@ export class ProfileRepository {
     return rows.length > 0;
   }
 
+  /**
+   * Blocks the account created, newest first, always bounded (audit P01-14). `cursor` is the
+   * (createdAt, blockedAccountId) pair of the last row of the previous page.
+   */
   async listBlocks(
     blockerAccountId: string,
+    page: { limit: number; cursor?: { blockedAt: Date; accountId: string } },
     tx?: Executor,
   ): Promise<Array<{ accountId: string; username: string | null; blockedAt: Date }>> {
+    const where = page.cursor
+      ? and(
+          eq(accountBlock.blockerAccountId, blockerAccountId),
+          sql`(${accountBlock.createdAt}, ${accountBlock.blockedAccountId}) < (${page.cursor.blockedAt.toISOString()}::timestamptz, ${page.cursor.accountId}::uuid)`,
+        )
+      : eq(accountBlock.blockerAccountId, blockerAccountId);
     const rows = await this.exec(tx)
       .select({
         accountId: accountBlock.blockedAccountId,
@@ -239,8 +250,9 @@ export class ProfileRepository {
       })
       .from(accountBlock)
       .leftJoin(profile, eq(profile.accountId, accountBlock.blockedAccountId))
-      .where(eq(accountBlock.blockerAccountId, blockerAccountId))
-      .orderBy(desc(accountBlock.createdAt));
+      .where(where)
+      .orderBy(desc(accountBlock.createdAt), desc(accountBlock.blockedAccountId))
+      .limit(page.limit);
     return rows;
   }
 

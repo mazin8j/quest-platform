@@ -47,8 +47,17 @@ export class AccountDeletionJob {
     private readonly lifecycle: LifecycleRepository,
   ) {}
 
-  async processDue(now = new Date(), limit = 50): Promise<{ deleted: number; failed: number }> {
+  async processDue(
+    now = new Date(),
+    limit = 50,
+  ): Promise<{ deleted: number; failed: number; paused: number }> {
     const due = await this.lifecycle.dueDeletions(now, limit);
+    const paused = await this.lifecycle.pausedDeletions(now);
+    if (paused > 0) {
+      // Erasure obligations that a suspension holds open: visible to operators, never silent.
+      this.metrics.gauge('quest.identity.deletion.paused', paused);
+      this.logger.warn({ paused }, 'account deletions paused past their scheduled date');
+    }
     let deleted = 0;
     let failed = 0;
     for (const request of due) {
@@ -65,22 +74,29 @@ export class AccountDeletionJob {
         );
       }
     }
-    return { deleted, failed };
+    return { deleted, failed, paused };
   }
 
   /** Executes the cascade for one account. Returns false when there was nothing to do. */
   async deleteAccount(accountId: string, deletionRequestId: string): Promise<boolean> {
-    const account = await this.accounts.findById(accountId);
-    if (!account || account.state === AccountState.DELETED) return false;
-    if (account.state !== AccountState.DELETION_REQUESTED) return false;
-    const next = transitionAccount(account.state, 'COMPLETE_DELETION');
     const deletedAt = new Date();
+    // Object keys are collected inside the transaction and deleted only after it commits, so a
+    // rollback never leaves a live account without its objects (audit P01-02/P01-03).
+    const objectKeys: string[] = [];
+    const executed = await this.db.transaction(async (tx) => {
+      // The row lock serialises this cascade against a concurrent cancellation: without it the
+      // job could commit an erasure the user had already cancelled successfully (audit P01-01).
+      const account = await this.accounts.findByIdForUpdate(accountId, tx);
+      if (!account || account.state !== AccountState.DELETION_REQUESTED) return false;
+      const next = transitionAccount(account.state, 'COMPLETE_DELETION');
+      // Claims the request; false means it was cancelled while we waited for the lock.
+      if (!(await this.lifecycle.completeDeletion(deletionRequestId, tx))) return false;
 
-    // Collect object keys before the rows are deleted; objects are removed after commit.
-    const exportKeys = (await this.lifecycle.listExports(accountId))
-      .map((e) => e.objectKey)
-      .filter((k): k is string => k !== null);
-    await this.db.transaction(async (tx) => {
+      objectKeys.push(
+        ...(await this.lifecycle.listExports(accountId, tx))
+          .map((e) => e.objectKey)
+          .filter((k): k is string => k !== null),
+      );
       await this.sessions.deleteSessions(accountId, tx);
       await this.sessions.deleteDevices(accountId, tx);
       await this.accounts.deleteCredential(accountId, tx);
@@ -88,7 +104,7 @@ export class AccountDeletionJob {
       await this.lifecycle.deleteCodes(accountId, tx);
       await this.lifecycle.deleteExports(accountId, tx);
       await this.accounts.revokeAllRoles(accountId, tx);
-      await this.profiles.eraseAccount(accountId, tx);
+      objectKeys.push(...(await this.profiles.eraseAccount(accountId, tx)));
       await this.accounts.update(
         accountId,
         {
@@ -105,10 +121,11 @@ export class AccountDeletionJob {
         tx,
       );
       await this.accounts.anonymiseDateOfBirth(accountId, tx);
-      await this.lifecycle.completeDeletion(deletionRequestId, tx);
       await this.lifecycle.audit({ accountId, eventType: 'DELETION_COMPLETED' }, tx);
+      return true;
     });
-    for (const key of exportKeys) await this.storage.delete(key).catch(() => undefined);
+    if (!executed) return false;
+    for (const key of objectKeys) await this.deleteObject(key, accountId);
 
     this.metrics.increment('quest.identity.deleted');
     await this.events.publish(
@@ -119,5 +136,22 @@ export class AccountDeletionJob {
       ),
     );
     return true;
+  }
+
+  /**
+   * Erasure of a storage object. A failure must never abort the cascade (the database record is
+   * already gone) but it must never be silent either: the object is orphaned PII and needs an
+   * operator sweep (audit P01-04).
+   */
+  private async deleteObject(objectKey: string, accountId: string): Promise<void> {
+    try {
+      await this.storage.delete(objectKey);
+    } catch (error) {
+      this.metrics.increment('quest.identity.storage.erase_failed');
+      this.logger.error(
+        { accountId, objectKey, err: error instanceof Error ? error.message : String(error) },
+        'object storage erase failed during account deletion',
+      );
+    }
   }
 }

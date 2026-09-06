@@ -49,6 +49,10 @@ import type {
 
 const SOURCE = 'api.profiles';
 const AVATAR_URL_TTL_S = 3600;
+/** Bound on the block list copied into an export bundle (audit P01-14). */
+const EXPORT_MAX_BLOCK_ROWS = 1000;
+/** Profile language when the account states none, and the value erasure resets it to (P01-05). */
+const DEFAULT_PROFILE_LANGUAGE = 'en';
 
 /** Principal facts the Profiles context needs; the age band comes from Identity, never the DOB. */
 export type ProfilePrincipal = Pick<Principal, 'accountId' | 'emailVerified' | 'ageBand'>;
@@ -82,7 +86,11 @@ export class ProfileService
     tx?: Executor,
   ): Promise<void> {
     await this.repo.insert(
-      { accountId: input.accountId, language: input.language ?? 'en', country: input.country },
+      {
+        accountId: input.accountId,
+        language: input.language ?? DEFAULT_PROFILE_LANGUAGE,
+        country: input.country,
+      },
       tx,
     );
     await this.repo.upsertPrivacy(
@@ -95,12 +103,11 @@ export class ProfileService
     await this.repo.update(accountId, { accountActive: active }, tx);
   }
 
-  async eraseAccount(accountId: string, tx?: Executor): Promise<void> {
+  /** Returns the storage keys the caller deletes after commit (audit P01-02). */
+  async eraseAccount(accountId: string, tx?: Executor): Promise<string[]> {
     const existing = await this.repo.findByAccountId(accountId, tx);
-    if (!existing) return;
-    if (existing.avatarObjectKey) {
-      await this.storage.delete(existing.avatarObjectKey).catch(() => undefined);
-    }
+    if (!existing) return [];
+    const objectKeys = existing.avatarObjectKey ? [existing.avatarObjectKey] : [];
     await this.repo.replaceInterests(accountId, [], tx);
     await this.repo.deleteBlocksInvolving(accountId, tx);
     await this.repo.deletePrivacy(accountId, tx);
@@ -113,11 +120,13 @@ export class ProfileService
         avatarObjectKey: null,
         country: null,
         timezone: null,
+        language: DEFAULT_PROFILE_LANGUAGE,
         accountActive: false,
         erasedAt: existing.erasedAt ?? new Date(),
       },
       tx,
     );
+    return objectKeys;
   }
 
   // ------------------------------------------------------------------------- query port ----
@@ -388,8 +397,11 @@ export class ProfileService
     if (!removed) throw ApiError.notFound('Block');
   }
 
-  async listBlocks(principal: ProfilePrincipal): Promise<BlockView[]> {
-    const rows = await this.repo.listBlocks(principal.accountId);
+  async listBlocks(
+    principal: ProfilePrincipal,
+    page: { limit: number; cursor?: { blockedAt: Date; accountId: string } },
+  ): Promise<BlockView[]> {
+    const rows = await this.repo.listBlocks(principal.accountId, page);
     return rows.map((r) => ({
       accountId: r.accountId,
       username: r.username,
@@ -427,10 +439,12 @@ export class ProfileService
             updatedAt: privacy.updatedAt.toISOString(),
           }
         : null,
-      blocks: (await this.repo.listBlocks(accountId)).map((b) => ({
-        blockedAccountId: b.accountId,
-        blockedAt: b.blockedAt.toISOString(),
-      })),
+      blocks: (await this.repo.listBlocks(accountId, { limit: EXPORT_MAX_BLOCK_ROWS })).map(
+        (b) => ({
+          blockedAccountId: b.accountId,
+          blockedAt: b.blockedAt.toISOString(),
+        }),
+      ),
     };
   }
 

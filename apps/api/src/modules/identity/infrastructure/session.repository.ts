@@ -5,7 +5,7 @@ import { and, asc, count, desc, eq, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import type { Executor } from '../../../infrastructure/database/executor';
-import { authSession, device } from '../../../infrastructure/database/schema';
+import { authSession, device } from '../../../infrastructure/database/schema/identity';
 
 export interface SessionRecord {
   id: string;

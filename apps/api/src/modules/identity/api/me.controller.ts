@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   type AccountView,
@@ -24,14 +24,21 @@ import {
   RequireVerifiedEmail,
 } from '../../../common/auth/decorators';
 import type { Principal } from '../../../common/auth/principal';
+import {
+  type ListPageQuery,
+  decodeCursor,
+  fullPage,
+  listPageQuerySchema,
+  toPage,
+} from '../../../common/pagination/cursor-page';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { AccountService } from '../application/account.service';
 import { DataExportService } from '../application/data-export.service';
 import { SessionService } from '../application/session.service';
 
-function page<T>(data: T[]): Paginated<T> {
-  return { data, pageInfo: { nextCursor: null, hasMore: false } };
-}
+// Sessions (capped at AUTH_MAX_SESSIONS_PER_ACCOUNT) and devices (one row per installation) are
+// bounded by construction; the consent ledger is not and is keyset-paged (audit P01-14).
+const page = fullPage;
 
 /** The signed-in account: view, sessions, devices, consents, lifecycle, export. */
 @Controller({ path: 'me', version: '1' })
@@ -110,8 +117,14 @@ export class MeController {
   @AllowStates('ACTIVE', 'PENDING_VERIFICATION', 'DELETION_REQUESTED')
   async consentHistory(
     @CurrentPrincipal() principal: Principal,
+    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQuery,
   ): Promise<Paginated<ConsentRecord>> {
-    return page(await this.accounts.consentHistory(principal.accountId));
+    const cursor = decodeCursor(query.cursor);
+    const rows = await this.accounts.consentHistory(principal.accountId, {
+      limit: query.limit + 1,
+      cursor: cursor ? { recordedAt: cursor.at, id: cursor.id } : undefined,
+    });
+    return toPage(rows, query.limit, (r) => ({ at: new Date(r.recordedAt), id: r.consentId }));
   }
 
   @Post('consents')

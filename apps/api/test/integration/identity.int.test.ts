@@ -983,10 +983,10 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .send({ currentPassword: a.password });
     expect(again.status).toBe(201);
     const job = it_.app.get(AccountDeletionJob);
-    expect(await job.processDue(new Date())).toEqual({ deleted: 0, failed: 0 });
+    expect(await job.processDue(new Date())).toEqual({ deleted: 0, failed: 0, paused: 0 });
     const due = new Date(new Date(again.body.scheduledFor).getTime() + 1000);
-    expect(await job.processDue(due)).toEqual({ deleted: 1, failed: 0 });
-    expect(await job.processDue(due)).toEqual({ deleted: 0, failed: 0 }); // idempotent
+    expect(await job.processDue(due)).toEqual({ deleted: 1, failed: 0, paused: 0 });
+    expect(await job.processDue(due)).toEqual({ deleted: 0, failed: 0, paused: 0 }); // idempotent
 
     const row = await pg.query<{
       email: string | null;
@@ -1277,6 +1277,8 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
       deleted: 0,
       failed: 0,
+      // Paused erasures are counted and reported instead of occupying the batch window (P01-06).
+      paused: 1,
     });
     expect(
       (
@@ -1293,6 +1295,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
       deleted: 1,
       failed: 0,
+      paused: 0,
     });
   });
 
@@ -1378,6 +1381,192 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       (await request(server()).get('/v1/profiles/limited_owner').set(auth(owner))).body,
     );
     expect(own.avatarUrl).toContain(upload.body.objectKey);
+  });
+
+  // ------------------------------------------------------------- audit repairs (P01-xx) ----
+
+  it('refuses to execute a deletion the user already cancelled (audit P01-01)', async () => {
+    const a = await register('race-cancel@example.com');
+    await verify(a);
+    const req = await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(a))
+      .send({ currentPassword: a.password });
+    expect(req.status).toBe(201);
+    const requestId = (
+      await pg.query<{ id: string }>(
+        'SELECT id FROM account_deletion_request WHERE account_id=$1',
+        [a.accountId],
+      )
+    ).rows[0]!.id;
+    const login = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', a.ip)
+          .send({ email: a.email, password: a.password })
+      ).body,
+    );
+    a.accessToken = login.tokens.accessToken;
+    expect(
+      (await request(server()).post('/v1/me/deletion-request/cancel').set(auth(a))).status,
+    ).toBe(200);
+    // The job holds a stale view of the request: it must abort, not erase a live account.
+    expect(await it_.app.get(AccountDeletionJob).deleteAccount(a.accountId, requestId)).toBe(false);
+    const row = await pg.query<{ state: string; email: string | null }>(
+      'SELECT state, email FROM account WHERE id=$1',
+      [a.accountId],
+    );
+    expect(row.rows[0]).toMatchObject({ state: 'ACTIVE', email: a.email });
+    expect(
+      (await pg.query('SELECT 1 FROM account_credential WHERE account_id=$1', [a.accountId]))
+        .rowCount,
+    ).toBe(1);
+  });
+
+  it('keeps a deactivated account hidden when its deletion request is cancelled (audit P01-05)', async () => {
+    const a = await register('cancel-deactivated@example.com');
+    await verify(a);
+    await request(server())
+      .put('/v1/me/profile')
+      .set(auth(a))
+      .send({ username: 'hidden_one', displayName: 'Hidden' });
+    const req = await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(a))
+      .send({ currentPassword: a.password });
+    expect(req.status, JSON.stringify(req.body)).toBe(201);
+    // A request recorded from DEACTIVATED (staff/CLI paths, and any future client that may
+    // request erasure from a hidden account): cancelling it must not republish the profile.
+    await pg.query(
+      "UPDATE account_deletion_request SET previous_state='DEACTIVATED' WHERE account_id=$1",
+      [a.accountId],
+    );
+    await pg.query('UPDATE account SET deactivated_at = now() WHERE id=$1', [a.accountId]);
+    const relogin = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', a.ip)
+          .send({ email: a.email, password: a.password })
+      ).body,
+    );
+    a.accessToken = relogin.tokens.accessToken;
+    const cancelled = await request(server()).post('/v1/me/deletion-request/cancel').set(auth(a));
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+    expect(accountViewSchema.parse(cancelled.body).state).toBe('DEACTIVATED');
+    expect(
+      (
+        await pg.query('SELECT 1 FROM account WHERE id=$1 AND deactivated_at IS NOT NULL', [
+          a.accountId,
+        ])
+      ).rowCount,
+    ).toBe(1);
+    expect(
+      (await request(server()).get('/v1/profiles/hidden_one').set('x-forwarded-for', nextIp()))
+        .status,
+    ).toBe(404);
+  });
+
+  it('requires staff-management to sanction another staff account (audit P01-07)', async () => {
+    const lead = await register('sanction-lead@example.com');
+    await verify(lead);
+    const moderator = await register('sanction-mod@example.com');
+    await verify(moderator);
+    const repo = it_.app.get(AccountRepository);
+    await repo.grantRole(lead.accountId, 'TRUST_SAFETY_LEAD', null);
+    await repo.grantRole(moderator.accountId, 'MODERATOR', null);
+    const leadTokens = authResponseSchema.parse(
+      (
+        await request(server())
+          .post('/v1/auth/login')
+          .set('x-forwarded-for', lead.ip)
+          .send({ email: lead.email, password: lead.password })
+      ).body,
+    ).tokens;
+    lead.accessToken = leadTokens.accessToken;
+    const onStaff = await request(server())
+      .post(`/v1/admin/accounts/${moderator.accountId}/suspend`)
+      .set(auth(lead))
+      .send({ reason: 'attempt to sanction a colleague' });
+    expect(onStaff.status).toBe(403);
+    const onSelf = await request(server())
+      .post(`/v1/admin/accounts/${lead.accountId}/suspend`)
+      .set(auth(lead))
+      .send({ reason: 'attempt to sanction self' });
+    expect(onSelf.status).toBe(400);
+    // An ordinary user is still sanctionable by the same staff account.
+    const user = await register('sanction-user@example.com');
+    await verify(user);
+    expect(
+      (
+        await request(server())
+          .post(`/v1/admin/accounts/${user.accountId}/suspend`)
+          .set(auth(lead))
+          .send({ reason: 'ordinary user sanction' })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('keeps the reset code usable when the new password is rejected (audit P01-10)', async () => {
+    const a = await register('reset-order@example.com');
+    await verify(a);
+    const ip = nextIp();
+    expect(
+      (
+        await request(server())
+          .post('/v1/auth/password/forgot')
+          .set('x-forwarded-for', ip)
+          .send({ email: a.email })
+      ).status,
+    ).toBe(202);
+    const code = codeFor(a.email, 'RESET_PASSWORD');
+    const rejected = await request(server())
+      .post('/v1/auth/password/reset')
+      .set('x-forwarded-for', ip)
+      .send({ email: a.email, code, newPassword: `reset-order plus more words` });
+    expect(rejected.status).toBe(400);
+    // The one-time code survives a rejected password: it was never consumed.
+    const accepted = await request(server())
+      .post('/v1/auth/password/reset')
+      .set('x-forwarded-for', ip)
+      .send({ email: a.email, code, newPassword: 'an entirely different passphrase' });
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(204);
+  });
+
+  it('pages the consent history instead of returning the whole ledger (audit P01-14)', async () => {
+    const a = await register('paged-consents@example.com');
+    await verify(a);
+    for (let i = 0; i < 4; i += 1) {
+      const res = await request(server())
+        .post('/v1/me/consents')
+        .set(auth(a))
+        .send({ type: 'ANALYTICS', granted: i % 2 === 0 });
+      expect(res.status).toBe(200);
+    }
+    const first = await request(server()).get('/v1/me/consents/history?limit=2').set(auth(a));
+    expect(first.status).toBe(200);
+    expect(first.body.data).toHaveLength(2);
+    expect(first.body.pageInfo.hasMore).toBe(true);
+    expect(first.body.pageInfo.nextCursor).toBeTruthy();
+    const second = await request(server())
+      .get(
+        `/v1/me/consents/history?limit=2&cursor=${encodeURIComponent(first.body.pageInfo.nextCursor)}`,
+      )
+      .set(auth(a));
+    expect(second.status).toBe(200);
+    const ids = new Set([
+      ...first.body.data.map((c: { consentId: string }) => c.consentId),
+      ...second.body.data.map((c: { consentId: string }) => c.consentId),
+    ]);
+    expect(ids.size).toBe(first.body.data.length + second.body.data.length);
+    expect(
+      (await request(server()).get('/v1/me/consents/history?cursor=not-a-cursor').set(auth(a)))
+        .status,
+    ).toBe(400);
+    // The current-consent view stays complete even though the history is paged.
+    const state = await request(server()).get('/v1/me/consents').set(auth(a));
+    expect(Object.keys(state.body.current).sort()).toContain('ANALYTICS');
   });
 
   it('never exposes secrets or the date of birth through any identity response', async () => {

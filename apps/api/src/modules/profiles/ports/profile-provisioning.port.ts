@@ -14,8 +14,12 @@ export interface ProfileProvisioningPort {
   ): Promise<void>;
   /** Mirrors account state: only active accounts are visible to other users. */
   setAccountActive(accountId: string, active: boolean, tx?: Executor): Promise<void>;
-  /** Irreversibly erases profile data (deletion cascade). Idempotent. */
-  eraseAccount(accountId: string, tx?: Executor): Promise<void>;
+  /**
+   * Irreversibly erases profile data (deletion cascade). Idempotent. Returns the object-storage
+   * keys the caller must delete **after the transaction commits** — the port never deletes objects
+   * itself, so a rollback cannot destroy a live account's media (audit P01-02).
+   */
+  eraseAccount(accountId: string, tx?: Executor): Promise<string[]>;
 }
 export const PROFILE_PROVISIONER = Symbol('PROFILE_PROVISIONER');
 

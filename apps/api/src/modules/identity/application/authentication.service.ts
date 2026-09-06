@@ -83,6 +83,9 @@ export class AuthenticationService {
       throw ApiError.unauthenticated(INVALID_CREDENTIALS);
     }
     if (credential.lockedUntil && credential.lockedUntil.getTime() > Date.now()) {
+      // Same Argon2 cost as every other outcome: a locked account must not answer faster than a
+      // wrong password, or latency alone confirms the address and its lock state (audit P01-10).
+      await this.hasher.verify(await this.dummyHash, input.password);
       await this.lifecycle.audit({ accountId: account.id, eventType: 'LOGIN_LOCKED' });
       this.metrics.increment('quest.identity.login', 1, { result: 'locked' });
       throw ApiError.unauthenticated(INVALID_CREDENTIALS);
@@ -323,13 +326,18 @@ export class AuthenticationService {
         'Reset failed',
       );
     if (!account || !account.email) throw generic();
-    const ok = await this.verification.verify(account.id, 'RESET_PASSWORD', input.code);
-    if (!ok) throw generic();
+    // The same state rule as `forgotPassword`: a code issued before a suspension must not still
+    // change the credential afterwards (audit P01-10).
+    if (!SIGN_IN_ALLOWED_STATES.has(account.state)) throw generic();
+    // Password rules are checked BEFORE the one-time code is consumed, so a rejected password
+    // does not cost the user their code and a 60-second cooldown (audit P01-10).
     if (passwordContainsEmailLocalPart(input.newPassword, account.email)) {
       throw ApiError.validation([
         { path: 'newPassword', message: 'Password must not contain your email address' },
       ]);
     }
+    const ok = await this.verification.verify(account.id, 'RESET_PASSWORD', input.code);
+    if (!ok) throw generic();
     const hash = await this.hasher.hash(input.newPassword);
     const revoked = await this.db.transaction(async (tx) => {
       await this.accounts.upsertCredential(account.id, hash, tx);
