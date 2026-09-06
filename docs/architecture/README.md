@@ -1,6 +1,6 @@
 # QUEST architecture documentation
 
-Implementation-accurate as of Phase 00 (2026-09-04). Each document describes what exists in the
+Implementation-accurate as of Phase 01 (2026-09-06). Each document describes what exists in the
 repository today and, where relevant, the agreed shape of what later phases add — clearly labelled.
 
 | #   | Document                                                       | Scope                                                                     |
@@ -19,3 +19,9 @@ repository today and, where relevant, the agreed shape of what later phases add 
 | 12  | [Observability Architecture](12_OBSERVABILITY_ARCHITECTURE.md) | Logs, ids, metrics, tracing, CloudWatch                                   |
 | 13  | [Scalability Architecture](13_SCALABILITY_ARCHITECTURE.md)     | Scaling levers and extraction triggers                                    |
 | —   | [Dependency Rules](DEPENDENCY_RULES.md)                        | The enforced boundary rules (D-08)                                        |
+
+Phase 01 (Identity & Profiles) companions: [ADR-011](../adr/ADR-011-identity-provider-strategy-and-token-model.md),
+[ADR-012](../adr/ADR-012-openapi-from-zod-contracts.md), [data model](../data/IDENTITY_DATA_MODEL.md),
+[threat model](../security/IDENTITY_THREAT_MODEL.md), [privacy classification](../security/IDENTITY_PRIVACY_CLASSIFICATION.md),
+[API guide](../api/IDENTITY_API.md), [acceptance criteria](../product/PHASE_01_IDENTITY_ACCEPTANCE.md),
+[mobile UX](../ux/PHASE_01_MOBILE_ONBOARDING.md).

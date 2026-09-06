@@ -41,6 +41,20 @@ pnpm db:reset:dev               # DROP + CREATE + migrate — refuses non-local 
 pnpm --filter @quest/api db:migrate:generate --name <slug>   # scaffold an empty SQL migration
 ```
 
+## Identity (Phase 01)
+
+```bash
+# .env: AUTH_JWT_SECRET (>= 32 chars), AUTH_FAKE_PROVIDER_ENABLED=true, AUTH_DEV_EXPOSE_CODES=true
+pnpm --filter @quest/api identity:grant-role -- <accountId> SUPER_ADMIN   # bootstrap the first staff account (CLI only)
+pnpm --filter @quest/api identity:process-deletions                        # execute due account deletions (30-day grace)
+pnpm --filter @quest/api identity:process-exports                          # fulfil data-export requests
+pnpm --filter @quest/api openapi:generate                                  # regenerate docs/api/openapi/v1.json (CI drift check)
+```
+
+Verification and password-reset codes are printed by the `log` mailer when `AUTH_DEV_EXPOSE_CODES=true`
+(never in production). Provider sign-in locally: `provider: "FAKE"`, `idToken: "fake:<subject>:<email>"`.
+Staff sign in to the admin console (http://localhost:3001/sign-in) with an account that holds a staff role.
+
 ## Run
 
 ```bash
@@ -63,7 +77,7 @@ pnpm deps:check     # dependency-cruiser boundary rules
 pnpm test           # vitest unit tests (all workspaces)
 pnpm build          # packages (tsc), api (tsc), web/admin (next build)
 pnpm verify         # all of the above in order
-RUN_INTEGRATION=true DATABASE_URL=postgresql://quest:quest@localhost:5432/quest pnpm --filter @quest/api test:integration
+RUN_INTEGRATION=true DATABASE_URL=postgresql://quest:quest@localhost:5432/quest REDIS_URL=redis://localhost:6379 pnpm --filter @quest/api test:integration   # migrations + identity suite + SDK E2E (drops the public schema!)
 pnpm --filter @quest/mobile exec expo export --platform android --output-dir /tmp/expo-out   # Metro bundle check
 ```
 

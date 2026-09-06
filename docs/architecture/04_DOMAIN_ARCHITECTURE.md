@@ -2,24 +2,24 @@
 
 ## Bounded contexts and ownership
 
-| Context                         | Owns (data)                                               | Phase    | Phase 00 artefact                  |
-| ------------------------------- | --------------------------------------------------------- | -------- | ---------------------------------- |
-| Identity                        | accounts, credentials, sessions, devices                  | 01       | —                                  |
-| Profiles                        | display profile, interests, privacy settings              | 01       | —                                  |
-| Quest                           | quest definitions, versions, categories, safety state ref | 02       | `SafetyAssessment` contract        |
-| Participation                   | acceptance/progress state machine                         | 02       | —                                  |
-| Proof                           | evidence references, verification records                 | 05       | `analyzeProof` capability shape    |
-| Gamification / Quest Passport   | XP ledger, badges, levels, streaks                        | 04       | —                                  |
-| Social Graph                    | follows, blocks, mutes, comments, reactions               | 03       | —                                  |
-| Crews                           | crews, membership, roles                                  | 09       | —                                  |
-| Feed / Discovery                | ranking inputs and outputs                                | 07       | `rankRecommendations` shape        |
-| Notifications                   | preferences, delivery log                                 | 01+      | —                                  |
-| Location                        | coarse/precise location policy, geo entities              | 08       | classification rules (docs)        |
-| Creators / Brands / World Quest | creator status, campaigns, world quests                   | 11/13/10 | —                                  |
-| Trust & Safety / Moderation     | assessments, cases, appeals, sanctions                    | 00/02/14 | `trust-safety` module, fail-closed |
-| Analytics                       | event taxonomy, consent-gated sinks                       | 15       | `@quest/analytics` contract        |
-| AI Intelligence                 | tasks, prompts, invocation audit                          | 06       | `@quest/ai` contracts              |
-| System                          | build/version info                                        | 00       | `system` module                    |
+| Context                         | Owns (data)                                                                | Phase    | Phase 00 artefact                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| Identity                        | accounts, credentials, sessions, devices, roles, consents, deletion/export | 01 ✅    | `modules/identity` — exports `PRINCIPAL_RESOLVER`, `AccountDeletionJob`, `DataExportService` |
+| Profiles                        | public profile, interests/onboarding, privacy settings, blocks             | 01 ✅    | `modules/profiles` — exports `PROFILE_PROVISIONER`, `PROFILE_QUERY`, `BLOCK_QUERY`           |
+| Quest                           | quest definitions, versions, categories, safety state ref                  | 02       | `SafetyAssessment` contract                                                                  |
+| Participation                   | acceptance/progress state machine                                          | 02       | —                                                                                            |
+| Proof                           | evidence references, verification records                                  | 05       | `analyzeProof` capability shape                                                              |
+| Gamification / Quest Passport   | XP ledger, badges, levels, streaks                                         | 04       | —                                                                                            |
+| Social Graph                    | follows, blocks, mutes, comments, reactions                                | 03       | —                                                                                            |
+| Crews                           | crews, membership, roles                                                   | 09       | —                                                                                            |
+| Feed / Discovery                | ranking inputs and outputs                                                 | 07       | `rankRecommendations` shape                                                                  |
+| Notifications                   | preferences, delivery log                                                  | 01+      | —                                                                                            |
+| Location                        | coarse/precise location policy, geo entities                               | 08       | classification rules (docs)                                                                  |
+| Creators / Brands / World Quest | creator status, campaigns, world quests                                    | 11/13/10 | —                                                                                            |
+| Trust & Safety / Moderation     | assessments, cases, appeals, sanctions                                     | 00/02/14 | `trust-safety` module, fail-closed                                                           |
+| Analytics                       | event taxonomy, consent-gated sinks                                        | 15       | `@quest/analytics` contract                                                                  |
+| AI Intelligence                 | tasks, prompts, invocation audit                                           | 06       | `@quest/ai` contracts                                                                        |
+| System                          | build/version info                                                         | 00       | `system` module                                                                              |
 
 ## Interaction patterns
 

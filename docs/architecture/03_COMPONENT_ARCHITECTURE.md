@@ -12,8 +12,9 @@ flowchart TB
     LOG[nestjs-pino<br/>redaction · req/res serializers]
     FLT[ApiExceptionFilter<br/>standard error envelope]
     VAL[ZodValidationPipe]
-    THR[ThrottlerGuard — global rate limit]
-    MET[MetricsPort → NoopMetrics]
+    THR[ThrottlerGuard — global + per-route limits]
+    AUTH[AuthGuard — default deny · state · verified email · permissions<br/>PRINCIPAL_RESOLVER port]
+    MET[MetricsModule · MetricsPort → NoopMetrics]
     OTEL[telemetry/otel.ts — tracer seam]
   end
   subgraph Infrastructure ports — src/infrastructure
@@ -22,21 +23,33 @@ flowchart TB
     OBJ[ObjectStorageModule<br/>OBJECT_STORAGE → S3 adapter]
     EVT[EventsModule<br/>EVENT_PUBLISHER · EVENT_SUBSCRIBER → InMemoryEventBus]
     AIM[AiModule · AI_GATEWAY → NotConfiguredAiGateway]
+    DEX[DataExportModule · DATA_EXPORT_REGISTRY]
   end
   subgraph Domain modules — src/modules
     SYS[system<br/>GET /v1/system/info]
     TS[trust-safety<br/>SAFETY_DECISION → FailClosedSafetyDecision]
-    NEXT[identity, profiles … — Phase 01+]
+    IDN[identity — Phase 01<br/>auth · me · admin controllers<br/>Session/Registration/Authentication/Account/DataExport services · AccountDeletionJob<br/>ports: PASSWORD_HASHER · TOKEN_SIGNER · MAILER · IDENTITY_PROVIDERS]
+    PRO[profiles — Phase 01<br/>me/profile · privacy · blocks · public profiles<br/>exports PROFILE_PROVISIONER · PROFILE_QUERY · BLOCK_QUERY]
+    NEXT[quest, participation … — Phase 02+]
   end
   HEALTH[health<br/>GET /health · GET /ready]
   MAIN --> APPM --> CFG & CTX & LOG & FLT & THR & MET
   APPM --> DB & RDS & OBJ & EVT & AIM
-  APPM --> HEALTH & SYS & TS
+  APPM --> HEALTH & SYS & TS & PRO & IDN
+  IDN --> PRO
+  IDN -. provides .-> AUTH
   HEALTH --> DB & RDS & OBJ
 ```
 
 Request pipeline order: `RequestContextMiddleware` → pino-http → helmet/CORS → `ThrottlerGuard` →
-route → `ZodValidationPipe` (per-route) → handler → `ApiExceptionFilter` (all errors).
+`AuthGuard` (resolves the bearer token to a `Principal` through `PRINCIPAL_RESOLVER`, sets
+`actorId` on the request context, enforces `@Public` / `@AllowStates` / `@RequireVerifiedEmail` /
+`@RequirePermission`) → route → `ZodValidationPipe` (per-route) → handler → `ApiExceptionFilter`.
+
+Module dependency direction (enforced by dependency-cruiser): `identity → profiles` through the
+exported ports only; `profiles` imports nothing from `identity`; both depend on `common/`,
+`config/` and `infrastructure/` ports. Cross-context contracts that need no owner (`Principal`,
+`DataExportContributor`) live in `common/` and `infrastructure/`.
 
 Module-internal layout (see `apps/api/src/modules/README.md`): `index.ts` (public), `api/`,
 `application/`, `domain/`, `ports/`, `infrastructure/`. Only `index.ts` may be imported across
