@@ -2,6 +2,7 @@ import { ApiClientError } from '@quest/api-client';
 import { suspendAccountRequestSchema, uuidSchema } from '@quest/types';
 import { NextResponse } from 'next/server';
 
+import { isSameOriginRequest } from '../../../../../lib/csrf';
 import { apiFor, getStaffContext } from '../../../../../lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ accountId: string }> },
 ): Promise<Response> {
+  if (!isSameOriginRequest(request))
+    return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 });
   const ctx = await getStaffContext();
   if (!ctx) return NextResponse.redirect(new URL('/sign-in', request.url), 303);
   const { accountId } = await params;
