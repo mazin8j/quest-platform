@@ -14,7 +14,10 @@ import {
 import { LoadingState } from '../../../src/components/LoadingState';
 import { Screen } from '../../../src/components/Screen';
 import { useQuests } from '../../../src/features/quests/quest-client';
-import { describePublishBlockers } from '../../../src/features/quests/publish-blockers';
+import {
+  describeEligibilityReason,
+  describePublishBlockers,
+} from '../../../src/features/quests/publish-blockers';
 import { radii, spacing, typography, useTheme } from '../../../src/theme';
 
 /**
@@ -49,13 +52,19 @@ export default function QuestDetailScreen() {
 
   const accept = useAction(async () => {
     if (!quest) return;
-    setAttempt(
-      await call((api) =>
-        api.participation.accept(quest.questId, {
-          expectedPublishedVersion: quest.publishedVersion ?? undefined,
-        }),
-      ),
-    );
+    try {
+      setAttempt(
+        await call((api) =>
+          api.participation.accept(quest.questId, {
+            expectedPublishedVersion: quest.publishedVersion ?? undefined,
+          }),
+        ),
+      );
+    } catch (error) {
+      // The API refuses with machine-readable reasons; show the participant the plain-language
+      // one rather than the raw code, and never invent a reason the server did not give.
+      throw new Error(eligibilityMessage(error));
+    }
     load();
   });
   const start = useAction(async () => {
@@ -184,6 +193,14 @@ function ErrorScreen({ error }: { error: string }) {
       <FormError error={error} />
     </Screen>
   );
+}
+
+/** Turns an eligibility refusal from the API into copy, falling back to the generic message. */
+function eligibilityMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  const codes = message.match(/[A-Z][A-Z_]{4,}/g) ?? [];
+  const first = codes[0];
+  return first ? describeEligibilityReason(first) : describeError(error);
 }
 
 function isActive(state: ParticipationView['state']): boolean {

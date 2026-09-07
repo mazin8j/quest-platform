@@ -533,7 +533,8 @@ export const ROUTES: ReadonlyArray<RouteDescriptor> = [
     auth: ['MANAGE_OWN_QUESTS'],
     requiresVerifiedEmail: true,
     request: createQuestRequestSchema,
-    responses: { 201: questDetailSchema, 400: null, 403: null },
+    // 409: the per-owner cap on Quests in a non-terminal state (QUEST_MAX_ACTIVE_PER_OWNER).
+    responses: { 201: questDetailSchema, 400: null, 403: null, 409: null },
     rateLimit: { limit: 20, windowSeconds: 60 },
   },
   {

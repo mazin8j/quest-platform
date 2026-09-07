@@ -108,6 +108,47 @@
   `@Throttle` decorators; add a drift test so documented and enforced limits cannot diverge
   (P01-A11).
 
+### Phase 02 follow-ups (Quest core, 2026-09-07)
+
+Residual items from the Phase 02 adversarial review. Every P0 and P1 was repaired on the branch
+with a regression test; what remains here is the P2 set and the debt the phase deliberately took on.
+
+- TD-37 Events are a dual write with no outbox: `QuestPublished`, `QuestUnpublished`,
+  `QuestSafetyAssessed` and the participation events are published after the transaction commits
+  against the in-process bus, so a crash between commit and publish loses them permanently. Harmless
+  today (no cross-process consumer) and already the pending decision recorded in
+  `ARCHITECTURE_DECISIONS.md`; mandatory before the first one (P02-P2).
+- TD-38 `IN_REVIEW` has no human approval path. A favourable re-assessment now releases a Quest, but
+  until Phase 14 provides a moderation queue there is no way for a person to clear one, and a Quest
+  the rule engine flags in error waits on a policy change. Owners can still revise and re-assess.
+- TD-39 The safety lexicon is deliberately small and English-only. Normalisation now defeats
+  zero-width and fullwidth evasion, but leetspeak, transliteration and every non-English language
+  are unhandled; Phase 06's classifier behind the AI Gateway is the answer, and until then the
+  engine's false-negative rate is a known limit, not a defect.
+- TD-40 `ACCEPTED` attempts never expire: `expires_at` is set only at START, so an accepted-and-
+  abandoned attempt holds its unique active slot until the participant cancels. The transition table
+  already defines `ACCEPTED --EXPIRE--> EXPIRED`; give acceptance a deadline and widen the sweep.
+- TD-41 Repeat-completion farming: `COMPLETION_REQUESTED` is not an active state, so one account can
+  loop accept → start → request-completion on the same Quest without limit. Harmless in Phase 02
+  (nothing is awarded); Phase 05 must bound it before evidence carries value.
+- TD-42 No idempotency keys on the new mutating routes. `POST /v1/quests` retried on a flaky network
+  creates a duplicate draft; accept is protected by the partial unique index and publish/archive are
+  naturally idempotent through 409. `API_CONVENTIONS.md` promises the header; no server code reads it.
+- TD-43 Displayed terms can differ from enforced terms after a non-safety-relevant edit: widening the
+  completion window changes the card immediately, while a participant who accepted earlier is frozen
+  at the version they accepted. Correct, but the card should say which version it is describing.
+- TD-44 `quest_discovery_idx` is partial, so a generic plan (a future `.prepare()`, or a pooler that
+  promotes named statements) falls back to a sequential scan with no error. Re-check the plan when
+  the first pooler is introduced.
+- TD-45 A safety restriction demanding an age above 18 is refused at publication rather than
+  enforced, because the three-band model cannot express it. Either widen the model or narrow
+  `safetyRestrictionsSchema.minimumAge` to what the platform can enforce.
+- TD-46 Mobile has no Quest edit screen: `PUT /v1/quests/:questId` exists and is exercised by the
+  API tests, but the composer only creates. Owners cannot revise from the phone.
+- TD-47 `quest_audit_ledger` retention is now documented in `docs/data/QUEST_DATA_MODEL.md`, but the
+  append-only property is a code convention with no trigger or `REVOKE` behind it — the same gap as
+  TD-34 for the consent ledger, and worth solving once for both.
+
 ### Should fix
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
