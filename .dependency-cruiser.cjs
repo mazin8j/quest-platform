@@ -68,6 +68,29 @@ module.exports = {
       to: { path: '^apps/api/src/infrastructure/database/schema/(index|profiles)\\.ts$' },
     },
     {
+      name: 'quests-must-not-read-identity-or-profile-tables',
+      severity: 'error',
+      comment:
+        'The Quest context owns only the quest* tables. Owner facts reach it through ' +
+        'AccountFactsPort (Identity) and ProfileQueryPort / BlockQueryPort (Profiles); it must ' +
+        'never query the identity or profile tables, and no date of birth may enter it.',
+      from: { path: '^apps/api/src/modules/quests/' },
+      to: { path: '^apps/api/src/infrastructure/database/schema/(index|identity|profiles)\\.ts$' },
+    },
+    {
+      name: 'quests-must-not-anticipate-later-phases',
+      severity: 'error',
+      comment:
+        'Phase 02 is Quest core only. The Quest context must not depend on later-phase contexts ' +
+        '(gamification, social graph, feed, discovery/ranking, crews, creators, brands).',
+      from: { path: '^apps/api/src/modules/quests/' },
+      to: {
+        path:
+          '^apps/api/src/modules/' +
+          '(gamification|social|social-graph|feed|discovery|crews|creators|brands|world-quest)/',
+      },
+    },
+    {
       name: 'api-modules-must-not-import-app-root',
       severity: 'error',
       comment: 'Modules must not depend on the composition root (app.module / main).',

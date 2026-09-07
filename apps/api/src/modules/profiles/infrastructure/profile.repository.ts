@@ -62,6 +62,19 @@ export class ProfileRepository {
     return rows[0];
   }
 
+  /** Batch read for owner cards in other contexts (Quest lists). Ids only, no PII beyond handles. */
+  async findManyByAccountIds(
+    accountIds: ReadonlyArray<string>,
+    tx?: Executor,
+  ): Promise<ProfileRecord[]> {
+    if (accountIds.length === 0) return [];
+    const rows = await this.exec(tx)
+      .select()
+      .from(profile)
+      .where(inArray(profile.accountId, [...accountIds]));
+    return rows;
+  }
+
   async findByUsername(username: string, tx?: Executor): Promise<ProfileRecord | undefined> {
     const rows = await this.exec(tx)
       .select()

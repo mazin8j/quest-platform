@@ -314,6 +314,25 @@ export class AccountService {
     return toDeletionView(latest);
   }
 
+  // ------------------------------------------------------------------ account facts port ----
+
+  /**
+   * Facts other contexts may know about an account (Quest publishing checks these). Nothing else
+   * about the account leaves Identity through this method.
+   */
+  async factsFor(accountId: string): Promise<{
+    accountId: string;
+    state: string;
+    emailVerified: boolean;
+  }> {
+    const account = await this.requireAccount(accountId);
+    return {
+      accountId: account.id,
+      state: account.state,
+      emailVerified: account.emailVerifiedAt !== null,
+    };
+  }
+
   // --------------------------------------------------------------------------------- staff ----
 
   async supportView(accountId: string): Promise<AccountSupportView> {

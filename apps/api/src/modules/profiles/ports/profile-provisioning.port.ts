@@ -23,7 +23,7 @@ export interface ProfileProvisioningPort {
 }
 export const PROFILE_PROVISIONER = Symbol('PROFILE_PROVISIONER');
 
-/** Read-side port for other contexts (Identity's onboarding status, support view). */
+/** Read-side port for other contexts (Identity's onboarding status, Quest owner cards). */
 export interface ProfileQueryPort {
   onboardingFacts(
     accountId: string,
@@ -35,6 +35,20 @@ export interface ProfileQueryPort {
     onboardingCompletedAt: Date | null;
     username: string | null;
   }>;
+  /**
+   * Public owner cards for a set of accounts, keyed by account id. Profiles decides what may be
+   * shown: an inactive, erased or otherwise non-public profile yields nulls rather than data, and
+   * nothing here ever carries an email, a date of birth or a location.
+   */
+  publicCardsFor(
+    accountIds: ReadonlyArray<string>,
+    tx?: Executor,
+  ): Promise<Record<string, { username: string | null; displayName: string | null }>>;
+  /**
+   * Coarse country of an account, for server-side eligibility checks only (never returned to a
+   * client by the calling context).
+   */
+  countryFor(accountId: string, tx?: Executor): Promise<string | null>;
 }
 export const PROFILE_QUERY = Symbol('PROFILE_QUERY');
 

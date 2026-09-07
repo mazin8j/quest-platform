@@ -143,6 +143,32 @@ export class ProfileService
     };
   }
 
+  /**
+   * Owner cards for another context. Profiles owns the rule: an inactive or erased profile shows
+   * nothing, and only the handle and display name ever leave this context.
+   */
+  async publicCardsFor(
+    accountIds: ReadonlyArray<string>,
+    tx?: Executor,
+  ): Promise<Record<string, { username: string | null; displayName: string | null }>> {
+    const rows = await this.repo.findManyByAccountIds(accountIds, tx);
+    const out: Record<string, { username: string | null; displayName: string | null }> = {};
+    for (const row of rows) {
+      const visible = row.accountActive && row.erasedAt === null;
+      out[row.accountId] = {
+        username: visible ? row.username : null,
+        displayName: visible ? row.displayName : null,
+      };
+    }
+    return out;
+  }
+
+  /** Coarse country for server-side eligibility checks in other contexts. Never returned to clients. */
+  async countryFor(accountId: string, tx?: Executor): Promise<string | null> {
+    const row = await this.repo.findByAccountId(accountId, tx);
+    return row?.country ?? null;
+  }
+
   isBlockedEitherWay(a: string, b: string): Promise<boolean> {
     return this.repo.isBlockedEitherWay(a, b);
   }

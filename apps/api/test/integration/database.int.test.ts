@@ -104,6 +104,7 @@ describe.skipIf(!enabled)('database migrations against a real PostgreSQL', () =>
       expect(status.applied.map((a) => a.tag)).toEqual([
         '0000_platform_extensions',
         '0001_identity_profiles',
+        '0002_quest_core',
       ]);
       const tables = await pristine.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables

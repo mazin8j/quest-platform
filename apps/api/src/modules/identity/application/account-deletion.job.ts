@@ -5,6 +5,10 @@ import { Logger } from 'nestjs-pino';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
+import {
+  ACCOUNT_ERASURE_REGISTRY,
+  type AccountErasureRegistryPort,
+} from '../../../infrastructure/account-erasure';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import { EVENT_PUBLISHER } from '../../../infrastructure/events/events.module';
 import {
@@ -26,7 +30,9 @@ const SOURCE = 'api.identity';
  * Runs after the grace period (DELETION_GRACE_DAYS) for every PENDING request:
  *   1. one transaction anonymises the account row (email → tombstone hash, DOB → 1900-01-01,
  *      state DELETED), hard-deletes credentials, identities, codes, sessions, devices, export
- *      requests, and erases the profile aggregate through the Profiles provisioning port;
+ *      requests, erases the profile aggregate through the Profiles provisioning port, and runs
+ *      every registered account-erasure contributor (Quest and later contexts) in that same
+ *      transaction;
  *   2. the consent ledger, role ledger and audit ledger are kept (ids only, no PII) as the legal
  *      record that the account existed and what it agreed to;
  *   3. `identity.account.deleted` is published so every other context erases its own data.
@@ -41,6 +47,7 @@ export class AccountDeletionJob {
     @Inject(METRICS) private readonly metrics: MetricsPort,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStoragePort,
     @Inject(PROFILE_PROVISIONER) private readonly profiles: ProfileProvisioningPort,
+    @Inject(ACCOUNT_ERASURE_REGISTRY) private readonly erasure: AccountErasureRegistryPort,
     private readonly logger: Logger,
     private readonly accounts: AccountRepository,
     private readonly sessions: SessionRepository,
@@ -105,6 +112,12 @@ export class AccountDeletionJob {
       await this.lifecycle.deleteExports(accountId, tx);
       await this.accounts.revokeAllRoles(accountId, tx);
       objectKeys.push(...(await this.profiles.eraseAccount(accountId, tx)));
+      // Every other bounded context erases its own account-linked rows in this same transaction.
+      // Doing it here rather than in an `identity.account.deleted` handler means a context that
+      // fails to erase aborts the cascade instead of stranding personal data (Phase 02, TD-07).
+      for (const contributor of this.erasure.contributors()) {
+        objectKeys.push(...(await contributor.eraseAccountData(accountId, tx)));
+      }
       await this.accounts.update(
         accountId,
         {

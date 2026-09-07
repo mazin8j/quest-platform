@@ -28,8 +28,9 @@ export class ApiError extends HttpException {
   static unauthenticated(message = 'Authentication required'): ApiError {
     return new ApiError(ApiErrorCode.UNAUTHENTICATED, message);
   }
-  static conflict(message: string): ApiError {
-    return new ApiError(ApiErrorCode.CONFLICT, message);
+  /** `issues` carries machine-readable detail (e.g. why a Quest cannot be published). */
+  static conflict(message: string, issues?: ValidationIssue[]): ApiError {
+    return new ApiError(ApiErrorCode.CONFLICT, message, issues);
   }
   static unavailable(message = 'Service temporarily unavailable'): ApiError {
     return new ApiError(ApiErrorCode.SERVICE_UNAVAILABLE, message);
