@@ -1,8 +1,13 @@
 # QUEST — Phase 02 Execution Report (2026-09-07)
 
-Repository: `C:\Quest` · branch `phase-02-quest-core` · commits `04be816` (Quest core) and `d3c6cb2`
-(adversarial-review repairs) on top of Phase 01 baseline `8db7fae` · working tree clean · 77 files
-changed (48 added, 29 modified).
+Repository: `C:\Quest` · branch `phase-02-quest-core`, three commits ahead of `main` (`e0f1d4d`,
+the merge of `phase-01-identity` through PR #1): `feat(quests)` Quest core, `fix(quests)`
+adversarial-review repairs, `docs(quests)` documentation. Working tree clean · 77 files changed
+(48 added, 29 modified).
+
+Commits are named by subject rather than by hash: they were authored in a cloud workspace and
+replayed onto `C:\Quest` as patches, so the hashes differ between the two repositories while the
+trees are identical (both `2755777`).
 
 ## 1. Executive summary
 
@@ -77,7 +82,7 @@ later-phase context, so this stays true by construction rather than by review.
 
 Four reviews ran in parallel over the implementation — authorization and privacy; the safety gate,
 fail-open paths and concurrency; the data model, migration and erasure obligations; API contract,
-lifecycle and phase-scope discipline. Findings, all repaired in `d3c6cb2`:
+lifecycle and phase-scope discipline. Findings, all repaired in the `fix(quests)` commit:
 
 | ID     | Severity | Defect                                                                          |
 | ------ | -------- | ------------------------------------------------------------------------------- |

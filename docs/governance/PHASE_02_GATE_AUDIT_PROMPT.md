@@ -22,7 +22,8 @@ Repository: `C:\Quest`, branch `phase-02-quest-core`.
 Before auditing anything, independently confirm from repository evidence:
 
 1. the branch is `phase-02-quest-core` and the working tree is clean;
-2. commit `8db7fae` (the Phase 01 baseline) is an ancestor of HEAD;
+2. `main` (commit `e0f1d4d`, the merge of `phase-01-identity` through PR #1) is an ancestor of
+   HEAD, and `phase-02-quest-core` is exactly three commits ahead of it;
 3. Phase 01 is fully merged into `main` and `git log main..phase-01-identity` is empty;
 4. the Phase 01 gate audit recorded PASS or PASS WITH CONDITIONS, and its P0/P1 findings were
    repaired;

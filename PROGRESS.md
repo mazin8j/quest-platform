@@ -11,7 +11,8 @@ independent audit can authorize it. The audit prompt is
 
 **Phase 02 — implemented (2026-09-07), gate audit pending.** Entry conditions were confirmed from
 repository evidence before any change: branch `phase-02-quest-core`, clean tree, Phase 01 baseline
-`8db7fae` an ancestor of HEAD, Phase 01 merged into `main`, and no open Phase 00/01 P0 or P1.
+`main` (`e0f1d4d`) an ancestor of HEAD, Phase 01 merged into `main` through PR #1, and no open
+Phase 00/01 P0 or P1.
 
 The phase implements the authoritative Quest lifecycle — draft, safety assessment, publication,
 archive, staff sanction, unranked discovery, and participation through to proof-required completion.
@@ -31,7 +32,7 @@ account-erasure registry runs every context's erasure inside the Identity deleti
 refuses to run at all if a required contributor has not registered.
 
 **Four independent adversarial reviews found 4 P0 and 20 P1 defects.** All 24 were repaired on the
-branch with regression tests (commit `d3c6cb2`), together with the P2 items whose fix was small and
+branch with regression tests (the `fix(quests)` commit), together with the P2 items whose fix was small and
 whose risk was real. The P0s were: a PRIVATE Quest acceptable by anyone who knew its id; safety
 country restrictions recorded and never enforced; owner cards leaking non-PUBLIC profiles — including
 13-15s, who can never be PUBLIC — to anonymous callers; and owner free text surviving erasure inside
