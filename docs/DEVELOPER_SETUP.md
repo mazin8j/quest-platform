@@ -100,8 +100,17 @@ pnpm infra:up
 RUN_INTEGRATION=true \
   DATABASE_URL=postgresql://<user>:<password>@localhost:5432/quest \
   REDIS_URL=redis://localhost:6379 \
-  pnpm --filter @quest/api test:integration
+  pnpm test:integration
 ```
+
+Run it through the **root** script (or `pnpm turbo run test:integration --filter=@quest/api`).
+Workspace packages resolve through their compiled `dist/`, and Turbo's `test:integration` task
+depends on `^build`, so it builds exactly the API's workspace dependencies first — `@quest/types`,
+`@quest/config`, `@quest/events`, `@quest/ai`, `@quest/api-client` — and nothing else. On a fresh
+clone `pnpm --filter @quest/api test:integration` cannot work on its own (`Failed to resolve entry
+for package "@quest/types"`); `pnpm build:deps:api` prepares those packages if you want to use the
+package script directly. The CI integration job deletes any `dist/` before it runs, so this stays
+true.
 
 Both variables are required — a missing one fails immediately with this command rather than timing
 out against an unreachable port. Everything else the suites depend on is pinned by

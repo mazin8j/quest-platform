@@ -112,7 +112,7 @@ module.exports = {
         pathNot: [
           '\\.d\\.ts$',
           '(^|/)tsconfig\\.json$',
-          '(^|/)(babel|webpack|vitest|drizzle|next|metro)\\.config\\.(js|cjs|mjs|ts)$',
+          '(^|/)(babel|webpack|vitest|drizzle|next|metro)\\.config\\.[cm]?[jt]s$',
           '(^|/)index\\.ts$',
           // Framework-convention entry points (imported by Next.js / expo-router, not by our code):
           '^apps/(web|admin)/src/app/',

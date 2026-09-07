@@ -7,8 +7,17 @@ pnpm infra:up                     # docker compose: PostGIS+pgvector, Redis, Min
 RUN_INTEGRATION=true \
   DATABASE_URL=postgresql://<user>:<password>@localhost:5432/quest \
   REDIS_URL=redis://localhost:6379 \
-  pnpm --filter @quest/api test:integration
+  pnpm test:integration           # root script → Turbo
 ```
+
+Use the **root** script (or `pnpm turbo run test:integration --filter=@quest/api`), not
+`pnpm --filter @quest/api test:integration`. The suites import `@quest/types`, `@quest/api-client`,
+`@quest/events`, `@quest/config` and `@quest/ai` through their compiled `dist/` entry points, and
+only the Turbo task graph (`test:integration` → `^build`) builds them first. Running the package
+script directly on a fresh clone fails with `Failed to resolve entry for package "@quest/types"`;
+`test/setup.integration.ts` checks the entry points up front and prints the command to run instead
+of leaving you with that message. `pnpm build:deps:api` builds just those packages if you want the
+package script.
 
 Without `RUN_INTEGRATION=true` the suites are skipped (not silently passed — Vitest reports them as
 skipped). CI runs them against the PostGIS+pgvector image built from `infrastructure/docker/postgres`.
