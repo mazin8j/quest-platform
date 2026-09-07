@@ -93,6 +93,25 @@ pnpm db:reset:dev               # DROP + CREATE + migrate — refuses non-local 
 pnpm --filter @quest/api db:migrate:generate --name <slug>   # scaffold an empty SQL migration
 ```
 
+## Integration tests
+
+```bash
+pnpm infra:up
+RUN_INTEGRATION=true \
+  DATABASE_URL=postgresql://<user>:<password>@localhost:5432/quest \
+  REDIS_URL=redis://localhost:6379 \
+  pnpm --filter @quest/api test:integration
+```
+
+Both variables are required — a missing one fails immediately with this command rather than timing
+out against an unreachable port. Everything else the suites depend on is pinned by
+`apps/api/test/setup.integration.ts`, so a local `.env` cannot change what they measure.
+
+`DATABASE_URL` is the **base** connection: each suite creates and migrates a database of its own
+(`quest_it_<test file>`) so the files can keep running in parallel without racing over one schema.
+The test role therefore needs permission to create databases — the compose service and the CI
+service both have it. Details and the suite → database table: `apps/api/test/integration/README.md`.
+
 ## Identity (Phase 01)
 
 ```bash

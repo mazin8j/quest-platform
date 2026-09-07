@@ -40,9 +40,18 @@ let ipCounter = 10;
 const nextIp = () => `10.1.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
 describe.skipIf(!enabled)('identity & profiles (real database)', () => {
-  let it_: IntegrationApp;
-  let pg: Client;
-  const server = () => it_.app.getHttpServer() as Parameters<typeof request>[0];
+  let it_: IntegrationApp | undefined;
+  let pg: Client | undefined;
+  /** Non-null accessors: a test body only runs when `beforeAll` succeeded. */
+  const harness = (): IntegrationApp => {
+    if (!it_) throw new Error('Integration app was not started');
+    return it_;
+  };
+  const db = (): Client => {
+    if (!pg) throw new Error('Database client was not connected');
+    return pg;
+  };
+  const server = () => harness().app.getHttpServer() as Parameters<typeof request>[0];
 
   interface Actor {
     email: string;
@@ -80,7 +89,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     email: string,
     template: 'VERIFY_EMAIL' | 'RESET_PASSWORD' = 'VERIFY_EMAIL',
   ): string {
-    const mail = it_.mailer.lastFor(email, template);
+    const mail = harness().mailer.lastFor(email, template);
     if (!mail || !('code' in mail.template)) throw new Error(`no ${template} mail for ${email}`);
     return mail.template.code;
   }
@@ -101,12 +110,15 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
 
   beforeAll(async () => {
     it_ = await createIntegrationApp();
-    pg = new Client({ connectionString: process.env.DATABASE_URL });
+    // This suite's own database (see helpers/test-database.ts), never the shared one.
+    pg = new Client({ connectionString: harness().databaseUrl });
     await pg.connect();
   });
   afterAll(async () => {
-    await pg.end();
-    await it_.close();
+    // Optional chaining keeps a failed beforeAll from adding a misleading teardown error on top
+    // of the real one.
+    await pg?.end();
+    await it_?.close();
   });
 
   // ------------------------------------------------------------------------ registration ----
@@ -144,7 +156,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(body.tokens.tokenType).toBe('Bearer');
     expect(body.tokens.accessTokenExpiresIn).toBe(900);
 
-    const rows = await pg.query<{ consent_type: string; granted: boolean }>(
+    const rows = await db().query<{ consent_type: string; granted: boolean }>(
       'SELECT consent_type, granted FROM consent_record WHERE account_id = $1 ORDER BY consent_type',
       [body.account.accountId],
     );
@@ -156,22 +168,25 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       { consent_type: 'PRIVACY_POLICY', granted: true },
       { consent_type: 'TERMS_OF_SERVICE', granted: true },
     ]);
-    const cred = await pg.query<{ password_hash: string }>(
+    const cred = await db().query<{ password_hash: string }>(
       'SELECT password_hash FROM account_credential WHERE account_id = $1',
       [body.account.accountId],
     );
     expect(cred.rows[0]?.password_hash).toMatch(/^\$argon2id\$/);
-    const profile = await pg.query<{ language: string; country: string; account_active: boolean }>(
-      'SELECT language, country, account_active FROM profile WHERE account_id = $1',
-      [body.account.accountId],
-    );
+    const profile = await db().query<{
+      language: string;
+      country: string;
+      account_active: boolean;
+    }>('SELECT language, country, account_active FROM profile WHERE account_id = $1', [
+      body.account.accountId,
+    ]);
     expect(profile.rows[0]).toEqual({ language: 'ar', country: 'JO', account_active: false });
-    const device = await pg.query<{ platform: string; device_name: string }>(
+    const device = await db().query<{ platform: string; device_name: string }>(
       'SELECT platform, device_name FROM device WHERE account_id = $1',
       [body.account.accountId],
     );
     expect(device.rows[0]).toEqual({ platform: 'IOS', device_name: 'Test iPhone' });
-    expect(it_.mailer.lastFor('ragad.one@example.com', 'VERIFY_EMAIL')).toBeDefined();
+    expect(harness().mailer.lastFor('ragad.one@example.com', 'VERIFY_EMAIL')).toBeDefined();
   });
 
   it('refuses duplicate emails (case-insensitively), weak passwords, wrong consent versions and under-age users', async () => {
@@ -216,7 +231,9 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
         consents,
       });
     expect(child.status).toBe(403);
-    const stored = await pg.query('SELECT 1 FROM account WHERE email = $1', ['child@example.com']);
+    const stored = await db().query('SELECT 1 FROM account WHERE email = $1', [
+      'child@example.com',
+    ]);
     expect(stored.rowCount).toBe(0);
   });
 
@@ -598,7 +615,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
         .set('x-forwarded-for', nextIp())
         .send({ email: a.email, password: 'whatever whatever' });
     }
-    const locked = await pg.query<{ locked_until: Date | null; failed_attempts: number }>(
+    const locked = await db().query<{ locked_until: Date | null; failed_attempts: number }>(
       'SELECT locked_until, failed_attempts FROM account_credential WHERE account_id = $1',
       [a.accountId],
     );
@@ -660,7 +677,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
           .set('x-forwarded-for', a.ip)
       ).status,
     ).toBe(401);
-    expect(it_.mailer.lastFor(a.email, 'PASSWORD_CHANGED')).toBeDefined();
+    expect(harness().mailer.lastFor(a.email, 'PASSWORD_CHANGED')).toBeDefined();
     expect(
       (
         await request(server())
@@ -867,7 +884,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .set(auth(a))
       .send({ avatarObjectKey: upload.body.objectKey });
     expect(notUploaded.status).toBe(400);
-    it_.storage.simulateUpload(upload.body.objectKey, 'image/png');
+    harness().storage.simulateUpload(upload.body.objectKey, 'image/png');
     const set = await request(server())
       .put('/v1/me/profile')
       .set(auth(a))
@@ -944,7 +961,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       (await request(server()).get('/v1/profiles/delete_me').set('x-forwarded-for', nextIp()))
         .status,
     ).toBe(404);
-    expect(it_.mailer.lastFor(a.email, 'DELETION_REQUESTED')).toBeDefined();
+    expect(harness().mailer.lastFor(a.email, 'DELETION_REQUESTED')).toBeDefined();
 
     const cancel = await request(server()).post('/v1/me/deletion-request/cancel').set(auth(a));
     expect(cancel.status).toBe(200);
@@ -955,11 +972,11 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     ).toBe(200);
 
     // Two export bundles and an avatar exist in storage before the cascade.
-    const exportService = it_.app.get(DataExportService);
+    const exportService = harness().app.get(DataExportService);
     const firstExport = await request(server()).post('/v1/me/data-export').set(auth(a));
     expect(firstExport.status).toBe(202);
     expect((await exportService.processOpen()).processed).toBe(1);
-    await pg.query(
+    await db().query(
       "UPDATE data_export_request SET requested_at = now() - interval '2 days' WHERE account_id = $1",
       [a.accountId],
     );
@@ -969,12 +986,14 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .post('/v1/me/profile/avatar-upload')
       .set(auth(a))
       .send({ contentType: 'image/jpeg', sizeBytes: 100 });
-    it_.storage.simulateUpload(upload.body.objectKey);
+    harness().storage.simulateUpload(upload.body.objectKey);
     await request(server())
       .put('/v1/me/profile')
       .set(auth(a))
       .send({ avatarObjectKey: upload.body.objectKey });
-    expect([...it_.storage.objects.keys()].filter((k) => k.includes(a.accountId))).toHaveLength(3);
+    expect(
+      [...harness().storage.objects.keys()].filter((k) => k.includes(a.accountId)),
+    ).toHaveLength(3);
 
     // Request again and run the job: not due yet → nothing; due → cascade.
     const again = await request(server())
@@ -982,13 +1001,13 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .set(auth(a))
       .send({ currentPassword: a.password });
     expect(again.status).toBe(201);
-    const job = it_.app.get(AccountDeletionJob);
+    const job = harness().app.get(AccountDeletionJob);
     expect(await job.processDue(new Date())).toEqual({ deleted: 0, failed: 0, paused: 0 });
     const due = new Date(new Date(again.body.scheduledFor).getTime() + 1000);
     expect(await job.processDue(due)).toEqual({ deleted: 1, failed: 0, paused: 0 });
     expect(await job.processDue(due)).toEqual({ deleted: 0, failed: 0, paused: 0 }); // idempotent
 
-    const row = await pg.query<{
+    const row = await db().query<{
       email: string | null;
       email_tombstone: string | null;
       state: string;
@@ -1012,10 +1031,10 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       ['account_interest', 'account_id'],
       ['privacy_settings', 'account_id'],
     ] as const) {
-      const r = await pg.query(`SELECT 1 FROM ${table} WHERE ${col} = $1`, [a.accountId]);
+      const r = await db().query(`SELECT 1 FROM ${table} WHERE ${col} = $1`, [a.accountId]);
       expect(r.rowCount, table).toBe(0);
     }
-    const profile = await pg.query<{
+    const profile = await db().query<{
       username: string | null;
       display_name: string | null;
       bio: string;
@@ -1026,17 +1045,19 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(profile.rows[0]).toMatchObject({ username: null, display_name: null, bio: '' });
     expect(profile.rows[0]?.erased_at).not.toBeNull();
     // Every storage object the account produced (avatar + all export bundles) is gone.
-    expect([...it_.storage.objects.keys()].filter((k) => k.includes(a.accountId))).toEqual([]);
-    const suspension = await pg.query<{ suspended_at: Date | null; suspended_by: string | null }>(
+    expect([...harness().storage.objects.keys()].filter((k) => k.includes(a.accountId))).toEqual(
+      [],
+    );
+    const suspension = await db().query<{ suspended_at: Date | null; suspended_by: string | null }>(
       'SELECT suspended_at, suspended_by FROM account WHERE id = $1',
       [a.accountId],
     );
     expect(suspension.rows[0]).toEqual({ suspended_at: null, suspended_by: null });
-    const consentsKept = await pg.query('SELECT 1 FROM consent_record WHERE account_id = $1', [
+    const consentsKept = await db().query('SELECT 1 FROM consent_record WHERE account_id = $1', [
       a.accountId,
     ]);
     expect(consentsKept.rowCount).toBeGreaterThan(0);
-    const audit = await pg.query<{ event_type: string }>(
+    const audit = await db().query<{ event_type: string }>(
       "SELECT event_type FROM identity_audit_ledger WHERE account_id = $1 AND event_type = 'DELETION_COMPLETED'",
       [a.accountId],
     );
@@ -1068,14 +1089,16 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(req.body.status).toBe('REQUESTED');
     expect((await request(server()).post('/v1/me/data-export').set(auth(a))).status).toBe(409);
 
-    const service = it_.app.get(DataExportService);
+    const service = harness().app.get(DataExportService);
     expect(await service.processOpen()).toEqual({ processed: 1, failed: 0, expired: 0 });
     const ready = await request(server())
       .get(`/v1/me/data-export/${req.body.exportId}`)
       .set(auth(a));
     expect(ready.body.status).toBe('READY');
     expect(ready.body.downloadUrl).toContain(`exports/${a.accountId}/${req.body.exportId}.json`);
-    const stored = it_.storage.objects.get(`exports/${a.accountId}/${req.body.exportId}.json`);
+    const stored = harness().storage.objects.get(
+      `exports/${a.accountId}/${req.body.exportId}.json`,
+    );
     expect(stored).toBeDefined();
     const bundle = dataExportBundleSchema.parse(JSON.parse(stored?.body.toString('utf8') ?? '{}'));
     expect(bundle.sections.map((s) => s.context).sort()).toEqual(['identity', 'profiles']);
@@ -1090,7 +1113,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       profile: { username: string };
     };
     expect(profiles.profile.username).toBe('export_one');
-    expect(it_.mailer.lastFor(a.email, 'DATA_EXPORT_READY')).toBeDefined();
+    expect(harness().mailer.lastFor(a.email, 'DATA_EXPORT_READY')).toBeDefined();
     // Cannot read someone else's export.
     const b = await register('export-b@example.com');
     expect(
@@ -1110,7 +1133,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     const staff = await register('staff@example.com');
     await verify(staff);
     // Bootstrap the first SUPER_ADMIN the way the operator CLI does (no API path exists by design).
-    await it_.app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
+    await harness().app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
     // Roles are embedded in the access token: sign in again to pick them up.
     const staffLogin = authResponseSchema.parse(
       (
@@ -1153,7 +1176,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(
       (await request(server()).get('/v1/profiles/citizen').set('x-forwarded-for', nextIp())).status,
     ).toBe(404);
-    const suspendedBy = await pg.query<{ suspended_by: string }>(
+    const suspendedBy = await db().query<{ suspended_by: string }>(
       'SELECT suspended_by FROM account WHERE id = $1',
       [user.accountId],
     );
@@ -1240,7 +1263,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .set(auth(pending));
     expect(cancelled.status).toBe(200);
     expect(accountViewSchema.parse(cancelled.body).state).toBe('PENDING_VERIFICATION');
-    const invariant = await pg.query(
+    const invariant = await db().query(
       "SELECT 1 FROM account WHERE state = 'ACTIVE' AND email_verified_at IS NULL",
     );
     expect(invariant.rowCount).toBe(0);
@@ -1250,7 +1273,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     await verify(user);
     const staff = await register('cancel-staff@example.com');
     await verify(staff);
-    await it_.app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
+    await harness().app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
     const staffTokens = authResponseSchema.parse(
       (
         await request(server())
@@ -1274,7 +1297,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(suspend.body.deletionScheduledFor).toBe(userReq.body.scheduledFor);
     // Paused: the job does not delete a suspended account even when the grace period elapsed.
     const due = new Date(new Date(userReq.body.scheduledFor).getTime() + 1000);
-    expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
+    expect(await harness().app.get(AccountDeletionJob).processDue(due)).toEqual({
       deleted: 0,
       failed: 0,
       // Paused erasures are counted and reported instead of occupying the batch window (P01-06).
@@ -1292,7 +1315,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .post(`/v1/admin/accounts/${user.accountId}/reinstate`)
       .set(auth(staff));
     expect(reinstate.body.state).toBe('DELETION_REQUESTED');
-    expect(await it_.app.get(AccountDeletionJob).processDue(due)).toEqual({
+    expect(await harness().app.get(AccountDeletionJob).processDue(due)).toEqual({
       deleted: 1,
       failed: 0,
       paused: 0,
@@ -1320,24 +1343,24 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     const exp = await request(server()).post('/v1/me/data-export').set(asProv);
     expect(exp.status).toBe(202);
     // Simulate a worker that crashed mid-export: PROCESSING with a stale start time.
-    await pg.query(
+    await db().query(
       "UPDATE data_export_request SET status = 'PROCESSING', started_at = now() - interval '1 hour' WHERE id = $1",
       [exp.body.exportId],
     );
-    const service = it_.app.get(DataExportService);
+    const service = harness().app.get(DataExportService);
     expect((await service.processOpen()).processed).toBe(1);
     expect(
       (await request(server()).get(`/v1/me/data-export/${exp.body.exportId}`).set(asProv)).body
         .status,
     ).toBe('READY');
     // Expiry sweep removes the object once past the TTL.
-    await pg.query(
+    await db().query(
       "UPDATE data_export_request SET expires_at = now() - interval '1 minute' WHERE id = $1",
       [exp.body.exportId],
     );
     expect((await service.processOpen()).expired).toBe(1);
     expect(
-      it_.storage.objects.has(`exports/${reg.account.accountId}/${exp.body.exportId}.json`),
+      harness().storage.objects.has(`exports/${reg.account.accountId}/${exp.body.exportId}.json`),
     ).toBe(false);
     expect(
       (await request(server()).get(`/v1/me/data-export/${exp.body.exportId}`).set(asProv)).body
@@ -1359,7 +1382,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .post('/v1/me/profile/avatar-upload')
       .set(auth(owner))
       .send({ contentType: 'image/png', sizeBytes: 10 });
-    it_.storage.simulateUpload(upload.body.objectKey, 'image/png');
+    harness().storage.simulateUpload(upload.body.objectKey, 'image/png');
     await request(server())
       .put('/v1/me/profile')
       .set(auth(owner))
@@ -1394,7 +1417,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       .send({ currentPassword: a.password });
     expect(req.status).toBe(201);
     const requestId = (
-      await pg.query<{ id: string }>(
+      await db().query<{ id: string }>(
         'SELECT id FROM account_deletion_request WHERE account_id=$1',
         [a.accountId],
       )
@@ -1412,14 +1435,16 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
       (await request(server()).post('/v1/me/deletion-request/cancel').set(auth(a))).status,
     ).toBe(200);
     // The job holds a stale view of the request: it must abort, not erase a live account.
-    expect(await it_.app.get(AccountDeletionJob).deleteAccount(a.accountId, requestId)).toBe(false);
-    const row = await pg.query<{ state: string; email: string | null }>(
+    expect(await harness().app.get(AccountDeletionJob).deleteAccount(a.accountId, requestId)).toBe(
+      false,
+    );
+    const row = await db().query<{ state: string; email: string | null }>(
       'SELECT state, email FROM account WHERE id=$1',
       [a.accountId],
     );
     expect(row.rows[0]).toMatchObject({ state: 'ACTIVE', email: a.email });
     expect(
-      (await pg.query('SELECT 1 FROM account_credential WHERE account_id=$1', [a.accountId]))
+      (await db().query('SELECT 1 FROM account_credential WHERE account_id=$1', [a.accountId]))
         .rowCount,
     ).toBe(1);
   });
@@ -1438,11 +1463,11 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(req.status, JSON.stringify(req.body)).toBe(201);
     // A request recorded from DEACTIVATED (staff/CLI paths, and any future client that may
     // request erasure from a hidden account): cancelling it must not republish the profile.
-    await pg.query(
+    await db().query(
       "UPDATE account_deletion_request SET previous_state='DEACTIVATED' WHERE account_id=$1",
       [a.accountId],
     );
-    await pg.query('UPDATE account SET deactivated_at = now() WHERE id=$1', [a.accountId]);
+    await db().query('UPDATE account SET deactivated_at = now() WHERE id=$1', [a.accountId]);
     const relogin = authResponseSchema.parse(
       (
         await request(server())
@@ -1457,7 +1482,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     expect(accountViewSchema.parse(cancelled.body).state).toBe('DEACTIVATED');
     expect(
       (
-        await pg.query('SELECT 1 FROM account WHERE id=$1 AND deactivated_at IS NOT NULL', [
+        await db().query('SELECT 1 FROM account WHERE id=$1 AND deactivated_at IS NOT NULL', [
           a.accountId,
         ])
       ).rowCount,
@@ -1473,7 +1498,7 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     await verify(lead);
     const moderator = await register('sanction-mod@example.com');
     await verify(moderator);
-    const repo = it_.app.get(AccountRepository);
+    const repo = harness().app.get(AccountRepository);
     await repo.grantRole(lead.accountId, 'TRUST_SAFETY_LEAD', null);
     await repo.grantRole(moderator.accountId, 'MODERATOR', null);
     const leadTokens = authResponseSchema.parse(

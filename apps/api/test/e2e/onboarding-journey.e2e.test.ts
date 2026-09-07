@@ -31,8 +31,13 @@ const dob = (age: number) => {
 };
 
 describe.skipIf(!enabled)('E2E: onboarding journey through the client SDK', () => {
-  let it_: IntegrationApp;
+  let it_: IntegrationApp | undefined;
   let baseUrl: string;
+  /** Non-null accessor: a test body only runs when `beforeAll` succeeded. */
+  const harness = (): IntegrationApp => {
+    if (!it_) throw new Error('Integration app was not started');
+    return it_;
+  };
 
   function sdk(forwardedFor: string) {
     const storage = new InMemoryTokenStorage();
@@ -60,7 +65,9 @@ describe.skipIf(!enabled)('E2E: onboarding journey through the client SDK', () =
     baseUrl = `http://127.0.0.1:${address.port}`;
   });
   afterAll(async () => {
-    await it_.close();
+    // Optional chaining keeps a failed beforeAll from producing a second, misleading error
+    // ("Cannot read properties of undefined (reading 'close')") that hides the real cause.
+    await it_?.close();
   });
 
   it('lets a new user onboard, exercise privacy controls, sign out and back in', async () => {
@@ -83,7 +90,7 @@ describe.skipIf(!enabled)('E2E: onboarding journey through the client SDK', () =
     expect(registered.account.onboarding.nextStep).toBe('VERIFY_EMAIL');
 
     // Verify email using the code the mailer delivered
-    const mail = it_.mailer.lastFor('e2e@example.com', 'VERIFY_EMAIL');
+    const mail = harness().mailer.lastFor('e2e@example.com', 'VERIFY_EMAIL');
     if (!mail || !('code' in mail.template)) throw new Error('no verification mail');
     const verified = await withAuthRetry(session, () =>
       api.auth.verifyEmail((mail.template as { code: string }).code),

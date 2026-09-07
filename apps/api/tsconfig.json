@@ -11,5 +11,5 @@
     "declarationMap": false,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts", "vitest.config.mts"]
 }
