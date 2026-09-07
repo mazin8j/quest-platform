@@ -1,9 +1,9 @@
 # QUEST — Phase 02 Execution Report (2026-09-07)
 
-Repository: `C:\Quest` · branch `phase-02-quest-core`, three commits ahead of `main` (`e0f1d4d`,
-the merge of `phase-01-identity` through PR #1): `feat(quests)` Quest core, `fix(quests)`
-adversarial-review repairs, `docs(quests)` documentation. Working tree clean · 77 files changed
-(48 added, 29 modified).
+Repository: `C:\Quest` · branch `phase-02-quest-core`, ahead of `main` (`e0f1d4d`, the merge of
+`phase-01-identity` through PR #1) by the Phase 02 commits: `feat(quests)` Quest core,
+`fix(quests)` adversarial-review repairs, and the `docs(quests)` commits. Working tree clean ·
+77 files changed (48 added, 29 modified).
 
 Commits are named by subject rather than by hash: they were authored in a cloud workspace and
 replayed onto `C:\Quest` as patches, so the hashes differ between the two repositories while the
