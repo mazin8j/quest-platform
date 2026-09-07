@@ -22,6 +22,44 @@ pnpm install --frozen-lockfile
 cp .env.example .env            # local defaults; edit if ports clash
 ```
 
+## Environment configuration (canonical)
+
+There is exactly **one** local configuration file: **`.env` at the repository root**, copied from
+`.env.example`. It is git-ignored, holds local values only, and is never committed. Every
+repository script loads it through one mechanism — `loadDevEnv()` in `@quest/config`, applied by
+`apps/api/src/cli/load-env.ts`, which every CLI and `main.ts` import first — so commands work from
+the repository root or any subdirectory with nothing exported by hand:
+
+```bash
+pnpm db:migrate                 # no `export DATABASE_URL` needed
+pnpm db:migrate:status
+pnpm db:reset:dev
+pnpm --filter @quest/api dev
+```
+
+Each run prints one line naming the file it loaded (`QUEST_ENV_VERBOSE=true` adds the variable
+names, `QUEST_ENV_QUIET=true` silences it). Values are never printed.
+
+**Precedence — highest first:**
+
+| Source                                       | Wins over        | Where it comes from                                          |
+| -------------------------------------------- | ---------------- | ------------------------------------------------------------ |
+| Variables already in the process environment | everything below | your shell, CI job env, ECS task definition, Secrets Manager |
+| The root `.env`                              | schema defaults  | your machine only                                            |
+| Schema defaults in `apps/*/src/config`       | —                | the code                                                     |
+
+The file can only **fill gaps**: a variable already present in the environment — including one
+deliberately set to an empty string — is never overwritten, so CI and injected production
+configuration always take precedence.
+
+**Deployed environments never read a file.** With `NODE_ENV=production` or `staging` the loader
+applies nothing; if a file is present it says so on stderr rather than ignoring it silently.
+Configuration there comes from the platform.
+
+Escape hatches: `QUEST_SKIP_DOTENV=true` disables the loader entirely; `QUEST_ENV_FILE=<path>`
+points it at a different file (for example a second local database). Docker Compose reads the same
+root `.env` for its own variable substitution, which is why one file at the root is the rule.
+
 ## Local infrastructure
 
 ```bash
@@ -93,13 +131,14 @@ docs/{architecture,api,security,data,adr,governance,roadmap,product}   documenta
 
 ## Troubleshooting
 
-| Symptom                                            | Fix                                                                                    |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | use Node 22 (`nvm use`)                                                                |
-| API exits with `Invalid environment configuration` | the message lists the offending variables; compare with `.env.example`                 |
-| `/ready` returns 503                               | `docker compose ps` — postgres/redis unhealthy; `pnpm infra:up` waits for health       |
-| Migration status shows pending after `db:migrate`  | ensure `DATABASE_URL` points to the same DB; run `pnpm db:migrate:status`              |
-| Metro cannot resolve a workspace package           | run `pnpm build` (packages emit `dist/`), then restart Expo with `--clear`             |
-| Vitest decorator errors in the API                 | `unplugin-swc` must be installed (`pnpm install`); do not run tests with plain esbuild |
-| ESLint "requires type information"                 | run from the workspace (`pnpm lint`), not from an editor with a stale tsconfig         |
-| Windows line-ending diffs                          | `git config core.autocrlf false` — `.gitattributes` enforces LF                        |
+| Symptom                                            | Fix                                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | use Node 22 (`nvm use`)                                                                                       |
+| API exits with `Invalid environment configuration` | the message lists the offending variables; compare with `.env.example`                                        |
+| `/ready` returns 503                               | `docker compose ps` — postgres/redis unhealthy; `pnpm infra:up` waits for health                              |
+| Migration status shows pending after `db:migrate`  | ensure `DATABASE_URL` points to the same DB; run `pnpm db:migrate:status`                                     |
+| `DATABASE_URL is required` from a `db:*` command   | no root `.env` (`cp .env.example .env`), or `QUEST_SKIP_DOTENV=true` is set — see "Environment configuration" |
+| Metro cannot resolve a workspace package           | run `pnpm build` (packages emit `dist/`), then restart Expo with `--clear`                                    |
+| Vitest decorator errors in the API                 | `unplugin-swc` must be installed (`pnpm install`); do not run tests with plain esbuild                        |
+| ESLint "requires type information"                 | run from the workspace (`pnpm lint`), not from an editor with a stale tsconfig                                |
+| Windows line-ending diffs                          | `git config core.autocrlf false` — `.gitattributes` enforces LF                                               |

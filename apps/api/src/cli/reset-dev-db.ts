@@ -5,6 +5,8 @@
  *   - DATABASE_URL host is localhost/127.0.0.1/::1 (or ALLOW_DB_RESET=true is set explicitly)
  * There is intentionally NO production reset command in this repository.
  */
+import './load-env';
+
 import { Client } from 'pg';
 
 import { migrateUp } from './migrate';

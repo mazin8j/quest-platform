@@ -9,6 +9,8 @@
  * Migrations live in apps/api/drizzle/*.sql and are indexed by drizzle/meta/_journal.json.
  * Applied migrations are recorded in public.quest_migrations (hash + created_at).
  */
+import './load-env';
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 

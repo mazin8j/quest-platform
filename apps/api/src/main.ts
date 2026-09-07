@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+// Local development convenience only: a no-op in production/staging (see cli/load-env.ts).
+import './cli/load-env';
 
 import { Logger } from 'nestjs-pino';
 

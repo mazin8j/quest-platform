@@ -3,6 +3,8 @@
  *   pnpm --filter @quest/api openapi:generate
  * CI/unit test `src/openapi/openapi.test.ts` fails when the committed file is stale.
  */
+import './load-env';
+
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
