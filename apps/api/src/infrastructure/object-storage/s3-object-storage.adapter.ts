@@ -94,6 +94,22 @@ export class S3ObjectStorageAdapter implements ObjectStoragePort {
     }
   }
 
+  async putObject(input: {
+    objectKey: string;
+    body: Buffer | string;
+    contentType: string;
+  }): Promise<void> {
+    assertValidObjectKey(input.objectKey);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: input.objectKey,
+        Body: input.body,
+        ContentType: input.contentType,
+      }),
+    );
+  }
+
   async delete(objectKey: string): Promise<void> {
     assertValidObjectKey(objectKey);
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));

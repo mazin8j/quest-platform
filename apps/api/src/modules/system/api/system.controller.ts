@@ -1,5 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 
+import { Public } from '../../../common/auth/decorators';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config';
 import { SERVICE_COMMIT, SERVICE_NAME, SERVICE_VERSION } from '../../../version';
 
@@ -16,6 +17,7 @@ export interface SystemInfoDto {
  * Exists to prove URI versioning, the error filter and the correlation-id plumbing end to end.
  */
 @Controller({ path: 'system', version: '1' })
+@Public()
 export class SystemController {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 

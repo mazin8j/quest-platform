@@ -23,8 +23,9 @@ export function configureApp(app: NestExpressApplication): INestApplication {
   // helmet) so early failures such as 413/400 and every log line carry them.
   const requestContext = new RequestContextMiddleware();
   app.use((req: Request, res: Response, next: NextFunction) => requestContext.use(req, res, next));
-  // Behind CloudFront/ALB in AWS; trust the first proxy hop for client IP (rate limiting).
-  app.set('trust proxy', 1);
+  // Client IP for rate limiting: trust exactly as many proxy hops as the deployment has
+  // (TRUST_PROXY_HOPS — 2 for CloudFront → ALB). Anything beyond that is client-controlled.
+  app.set('trust proxy', config.TRUST_PROXY_HOPS);
   app.disable('x-powered-by');
 
   app.use(

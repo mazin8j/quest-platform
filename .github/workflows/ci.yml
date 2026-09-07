@@ -70,6 +70,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Fresh-clone condition, asserted rather than assumed: GitHub jobs are isolated, so this job
+      # must work with no build output from the `test-build` job and none of its own. Every step
+      # below either needs no `dist/` (the database CLIs) or builds what it needs (the suites).
+      - name: Remove any workspace build output (fresh-clone condition)
+        run: rm -rf packages/*/dist apps/*/dist
       - name: Start PostgreSQL (PostGIS + pgvector) and Redis
         run: docker compose up -d --wait postgres redis
       - name: Migration status on clean database (must report pending)
@@ -84,8 +89,11 @@ jobs:
         run: pnpm db:migrate:status && pnpm db:migrate
         env:
           DATABASE_URL: postgresql://quest:quest@localhost:5432/quest
-      - name: Integration tests
-        run: pnpm --filter @quest/api test:integration
+      # Through Turbo, whose `test:integration` task depends on `^build`: it builds exactly the
+      # API's workspace dependencies (types, config, events, ai, api-client) and nothing else —
+      # no hardcoded list, no web/admin/mobile builds, no artifacts copied between jobs.
+      - name: Integration tests (builds the API's workspace dependencies first)
+        run: pnpm turbo run test:integration --filter=@quest/api
         env:
           RUN_INTEGRATION: 'true'
           DATABASE_URL: postgresql://quest:quest@localhost:5432/quest

@@ -6,6 +6,8 @@ export interface InMemoryEventBusOptions {
   onDelivered?: (result: EventDeliveryResult) => void;
   /** When true (default), a handler failure does not prevent other handlers from running. */
   isolateHandlerFailures?: boolean;
+  /** Upper bound for the retained log / seen-id set (oldest entries are dropped). Default 1000. */
+  maxRetained?: number;
 }
 
 /**
@@ -36,6 +38,15 @@ export class InMemoryEventBus implements EventPublisher, EventSubscriber {
     this.log.push(event);
     // Simulate broker-level de-duplication is NOT done here on purpose: handlers must be idempotent.
     this.seen.add(event.eventId);
+    // Bounded retention: the log exists for tests and diagnostics, never as durable storage.
+    const max = this.options.maxRetained ?? 1000;
+    while (this.log.length > max) this.log.shift();
+    if (this.seen.size > max) {
+      for (const id of this.seen) {
+        if (this.seen.size <= max) break;
+        this.seen.delete(id);
+      }
+    }
     const handlers = [...(this.handlers.get(event.eventType) ?? [])];
     const failures: { handlerIndex: number; error: string }[] = [];
     for (const [index, handler] of handlers.entries()) {

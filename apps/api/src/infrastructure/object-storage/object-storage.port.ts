@@ -25,6 +25,15 @@ export interface ObjectStoragePort {
   presignUpload(input: PresignUploadInput): Promise<PresignedUpload>;
   presignDownload(objectKey: string, expiresInSeconds?: number): Promise<string>;
   head(objectKey: string): Promise<{ exists: boolean; sizeBytes?: number; contentType?: string }>;
+  /**
+   * Server-side write for small, system-generated objects only (data-export bundles, reports).
+   * User media never goes through here (ADR-005: direct-to-storage uploads).
+   */
+  putObject(input: {
+    objectKey: string;
+    body: Buffer | string;
+    contentType: string;
+  }): Promise<void>;
   delete(objectKey: string): Promise<void>;
   /** Cheap probe for readiness. */
   ping(): Promise<boolean>;

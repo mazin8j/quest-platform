@@ -3,10 +3,13 @@ import 'reflect-metadata';
 import { Logger } from 'nestjs-pino';
 
 import { createApp } from './bootstrap';
+import { applyDevEnv } from './cli/load-env';
 import { APP_CONFIG, type AppConfig } from './config/app-config';
 import { SERVICE_NAME, SERVICE_VERSION } from './version';
 
 async function main(): Promise<void> {
+  // Local development convenience: a no-op in production/staging (see cli/load-env.ts).
+  applyDevEnv();
   const app = await createApp();
   const config = app.get<AppConfig>(APP_CONFIG);
   const logger = app.get(Logger);

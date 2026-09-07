@@ -81,6 +81,17 @@ export const baseConfig = tseslint.config(
     files: ['**/src/cli/**/*.ts', '**/*.test.ts', '**/*.spec.ts', '**/test/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
+  {
+    // HTTP integration suites assert on supertest's untyped `res.body`; the contracts themselves
+    // are checked with zod schemas inside those tests, so the unsafe-any family is relaxed here only.
+    files: ['**/test/integration/**/*.int.test.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+    },
+  },
   prettier,
 );
 

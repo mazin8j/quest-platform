@@ -19,6 +19,14 @@
 - `dataClassification` gates what may leave the process; `RESTRICTED` (precise location, evidence)
   never travels in events — only references.
 
+## Catalogue (Phase 01)
+
+`packages/events/src/catalog/identity.ts`: `identity.account.registered`, `email-verified`,
+`deactivated`, `reactivated`, `suspended`, `reinstated`, `deletion-requested`, `deletion-cancelled`,
+`deleted` (terminal — every context erases its data), `role-granted`, `role-revoked`,
+`sessions-revoked`; `profiles.profile.updated`. Payloads are ids, age band, country and language
+only (tested). Publishing happens after the owning transaction commits.
+
 ## Flow
 
 ```mermaid

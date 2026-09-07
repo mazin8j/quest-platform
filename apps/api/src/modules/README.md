@@ -22,4 +22,9 @@ other module's exported query port, cross-context reactions go through domain ev
 infrastructure/ and config/ never import from modules/.
 
 Phase 00 ships two foundation modules — `system` (versioned info endpoint) and `trust-safety`
-(fail-closed `SafetyDecisionPort`). Phase 01 adds `identity` and `profiles`.
+(fail-closed `SafetyDecisionPort`). Phase 01 adds `identity` (ACCOUNT + AUTHENTICATION aggregates,
+registers the global `AuthGuard`) and `profiles` (PUBLIC PROFILE aggregate). Dependency direction is
+`identity → profiles` through `profiles/index.ts` ports only (`PROFILE_PROVISIONER`, `PROFILE_QUERY`,
+`BLOCK_QUERY`); `profiles` never imports `identity`. Later contexts consume `BLOCK_QUERY` for block
+precedence and register a `DataExportContributor` + an `identity.account.deleted` handler when they
+add account-linked tables.

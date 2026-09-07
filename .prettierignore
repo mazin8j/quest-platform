@@ -13,3 +13,5 @@ apps/api/drizzle/meta
 docs/governance/PHASE_GATE_AUDIT_*.md
 apps/web/next-env.d.ts
 apps/admin/next-env.d.ts
+# Generated from zod contracts (pnpm --filter @quest/api openapi:generate); byte-exact drift check in CI.
+docs/api/openapi/

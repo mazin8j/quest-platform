@@ -16,6 +16,8 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 
+import { applyDevEnv } from './load-env';
+
 // Works from both src/cli (tsx) and dist/cli (compiled): apps/api/<src|dist>/cli → apps/api/drizzle
 const MIGRATIONS_FOLDER = path.resolve(__dirname, '..', '..', 'drizzle');
 const MIGRATIONS_TABLE = 'quest_migrations';
@@ -39,7 +41,11 @@ function readJournal(): JournalEntry[] {
 function requireDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.error('DATABASE_URL is required');
+    // Names the one canonical source so the fix is obvious; never echoes any value.
+    console.error(
+      'DATABASE_URL is required. Set it in the repository-root .env (cp .env.example .env) or in ' +
+        'the environment. See docs/DEVELOPER_SETUP.md "Environment configuration".',
+    );
     process.exit(2);
   }
   return url;
@@ -118,6 +124,9 @@ async function main(): Promise<void> {
 }
 
 if (require.main === module) {
+  // Only when this file is the program: importing it as a library (the integration harness reuses
+  // `migrateUp`) must never mutate the environment.
+  applyDevEnv();
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);

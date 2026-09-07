@@ -49,7 +49,7 @@ Use a production-grade modular monolith with explicit domain boundaries and even
 - `apps/mobile` — React Native + Expo (expo-router)
 - `apps/web` — Next.js public/creator web
 - `apps/admin` — Next.js admin/moderation console
-- `packages/types` — cross-application contracts (API envelope, pagination, safety contract, health)
+- `packages/types` — cross-application contracts (API envelope, pagination, safety contract, health, identity/profile contracts, RBAC vocabulary, age policy)
 - `packages/config` — validated environment primitives
 - `packages/events` — domain event envelope, ports, in-process bus
 - `packages/ai` — provider-independent AI Gateway contracts
@@ -58,8 +58,8 @@ Use a production-grade modular monolith with explicit domain boundaries and even
 - `packages/api-client` — shared HTTP client for mobile/web/admin
 - `infrastructure/docker` — local PostgreSQL (PostGIS + pgvector) image
 - `infrastructure/terraform` — AWS modules + `environments/<env>`
-- `docs/architecture` (01–13 + DEPENDENCY_RULES), `docs/api`, `docs/data`, `docs/ai`, `docs/security` (security, privacy, safety baseline), `docs/adr`, `docs/governance`, `docs/roadmap`, `docs/product`, `docs/DEVELOPER_SETUP.md`
-- `docs/ux` is created with the first UX deliverable; `tests/` holds cross-application E2E suites when they exist (unit/integration tests live next to each workspace)
+- `docs/architecture` (01–13 + DEPENDENCY_RULES), `docs/api` (conventions, identity guide, generated `openapi/v1.json`), `docs/data`, `docs/ai`, `docs/security` (security, privacy, safety baseline, identity threat model + classification), `docs/adr`, `docs/governance`, `docs/roadmap`, `docs/product`, `docs/DEVELOPER_SETUP.md`
+- `docs/ux` — UX flows (first deliverable: Phase 01 mobile onboarding); cross-layer E2E suites live in `apps/api/test/e2e` (client SDK ↔ live API ↔ database) until a multi-app runner is needed under `tests/`; unit/integration tests live next to each workspace
 - `.claude/agents`, `.claude/skills` — Claude development pack
 - Root: `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `eslint.config.mjs`, `.dependency-cruiser.cjs`, `docker-compose.yml`, `.github/workflows/ci.yml`
 
@@ -69,7 +69,7 @@ Identity, Profiles, Quest, Participation, Proof, Quest Passport, Social Graph, C
 
 ## Non-Negotiable Architecture Rules
 
-Mechanically enforced where possible: `docs/architecture/DEPENDENCY_RULES.md` (`pnpm deps:check`) and ESLint. Standard commands: `pnpm verify`, `pnpm infra:up`, `pnpm db:migrate`, `pnpm db:migrate:status` — see `docs/DEVELOPER_SETUP.md`.
+Mechanically enforced where possible: `docs/architecture/DEPENDENCY_RULES.md` (`pnpm deps:check`) and ESLint. Standard commands: `pnpm verify`, `pnpm infra:up`, `pnpm db:migrate`, `pnpm db:migrate:status`, `pnpm --filter @quest/api openapi:generate` — see `docs/DEVELOPER_SETUP.md`. Every HTTP route is authenticated unless marked `@Public`; identity keys are immutable UUIDs (ADR-011).
 
 1. Read relevant files before editing. Never guess existing code.
 2. Every major technology choice requires an ADR.

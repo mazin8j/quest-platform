@@ -84,6 +84,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 
+  # User-data export bundles (Phase 01) are downloadable for DATA_EXPORT_TTL_DAYS (7) and then
+  # removed even if the application sweep never ran; noncurrent versions follow the rule below.
+  rule {
+    id     = "expire-data-exports"
+    status = "Enabled"
+    filter {
+      prefix = "exports/"
+    }
+    expiration {
+      days = 7
+    }
+  }
+
   dynamic "rule" {
     for_each = var.versioning ? [1] : []
     content {

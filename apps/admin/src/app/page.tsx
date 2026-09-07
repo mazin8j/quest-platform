@@ -2,12 +2,14 @@ import { ApiClientError } from '@quest/api-client';
 
 import { RoleGate } from '../components/RoleGate';
 import { getApiReadiness } from '../lib/api';
-import { AdminPermission, getAdminSession } from '../lib/authz/roles';
+import { AdminPermission } from '../lib/authz/roles';
+import { getStaffContext } from '../lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminHome() {
-  const session = getAdminSession();
+  const ctx = await getStaffContext();
+  const session = ctx?.session ?? null;
   let readiness: { ok: boolean; summary: string };
   try {
     const r = await getApiReadiness();
@@ -29,7 +31,9 @@ export default async function AdminHome() {
       <div className="q-card">
         <h1>Overview</h1>
         <p className="q-muted">
-          Phase 00 shell. Moderation, support and analytics surfaces arrive in later phases.
+          {ctx
+            ? `Signed in as ${ctx.account.email} (${ctx.session.roles.join(', ')}).`
+            : 'Phase 01 console: staff sign-in and account support lookup. Moderation and analytics arrive in later phases.'}
         </p>
         <p>
           API readiness:{' '}

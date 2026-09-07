@@ -13,6 +13,12 @@
 - Redis 7 is cache/counters/rate-limit only; eviction `allkeys-lru`; never a source of truth.
 - Object storage holds media; the database stores object keys and metadata, never bytes.
 
+## Phase 01 tables
+
+Identity & Profiles: 16 tables in migration `0001_identity_profiles` — model, indexes, deletion
+cascade and export contract in [`docs/data/IDENTITY_DATA_MODEL.md`](../data/IDENTITY_DATA_MODEL.md);
+per-column classification in [`docs/security/IDENTITY_PRIVACY_CLASSIFICATION.md`](../security/IDENTITY_PRIVACY_CLASSIFICATION.md).
+
 ## Conventions for Phase 01+ tables (normative)
 
 | Concern      | Rule                                                                                                                                          |
@@ -43,8 +49,10 @@
   after verification, then coarsened to city level or deleted.
 - Unattached uploads: 3-day S3 lifecycle expiry (`uploads/tmp/`).
 - Logs: 14 days dev / 30 days prod (`observability` module).
-- Account deletion: cascades through owned aggregates via per-context deletion handlers reacting to
-  `identity.account.deleted` (Phase 01 defines the event and the export/delete jobs).
+- Account deletion: 30-day grace, then `AccountDeletionJob` anonymises the account, hard-deletes
+  credentials/sessions/devices/codes, erases the profile aggregate in the same transaction and
+  publishes `identity.account.deleted`; every other context erases its own data in an idempotent
+  handler (implemented in Phase 01 — `docs/data/IDENTITY_DATA_MODEL.md`).
 
 ## Backup & recovery
 

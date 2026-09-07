@@ -1,8 +1,8 @@
 import { Link } from 'expo-router';
 import { StyleSheet, Text } from 'react-native';
 
-import { Screen } from '@/components/Screen';
-import { typography, useTheme } from '@/theme';
+import { Screen } from '../src/components/Screen';
+import { typography, useTheme } from '../src/theme';
 
 export default function NotFoundScreen() {
   const t = useTheme();

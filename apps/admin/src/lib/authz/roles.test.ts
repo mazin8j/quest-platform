@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { AdminPermission, AdminRole, can, getAdminSession, rolePermissions } from './roles';
+import { AdminPermission, AdminRole, STAFF_ROLES, can, rolePermissions } from './roles';
 
-describe('admin role-aware authorization (presentation gate)', () => {
-  it('denies everything when signed out (Phase 00 default)', () => {
-    expect(getAdminSession()).toBeNull();
+describe('admin role-aware authorization (presentation gate, shared vocabulary)', () => {
+  it('denies everything when signed out', () => {
     for (const p of Object.values(AdminPermission)) expect(can(null, p)).toBe(false);
   });
 
@@ -22,17 +21,15 @@ describe('admin role-aware authorization (presentation gate)', () => {
     const both = { staffId: 's3', roles: [AdminRole.SUPPORT, AdminRole.ANALYST] };
     expect(can(both, AdminPermission.VIEW_ANALYTICS)).toBe(true);
     expect(can(both, AdminPermission.VIEW_USER_SUPPORT_PROFILE)).toBe(true);
-    const holders = Object.entries(rolePermissions)
-      .filter(([, perms]) => perms.has(AdminPermission.MANAGE_STAFF))
-      .map(([r]) => r);
+    const holders = STAFF_ROLES.filter((r) => rolePermissions[r].has(AdminPermission.MANAGE_STAFF));
     expect(holders).toEqual([AdminRole.SUPER_ADMIN]);
   });
 
-  it('every role has at least VIEW_DASHBOARD and every permission is grantable by some role', () => {
-    for (const perms of Object.values(rolePermissions))
-      expect(perms.has(AdminPermission.VIEW_DASHBOARD)).toBe(true);
-    for (const p of Object.values(AdminPermission)) {
-      expect(Object.values(rolePermissions).some((s) => s.has(p))).toBe(true);
-    }
+  it('every staff role has VIEW_DASHBOARD and a plain USER has no staff permission', () => {
+    for (const r of STAFF_ROLES)
+      expect(rolePermissions[r].has(AdminPermission.VIEW_DASHBOARD)).toBe(true);
+    expect(can({ staffId: 'u', roles: [AdminRole.USER] }, AdminPermission.VIEW_DASHBOARD)).toBe(
+      false,
+    );
   });
 });

@@ -7,11 +7,13 @@
  */
 import { Client } from 'pg';
 
+import { applyDevEnv } from './load-env';
 import { migrateUp } from './migrate';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', 'postgres', 'db']);
 
 async function main(): Promise<void> {
+  applyDevEnv();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required');
   const env = process.env.NODE_ENV ?? 'development';

@@ -67,12 +67,14 @@ module "api" {
     LOG_LEVEL            = "info"
     API_PORT             = "4000"
     CORS_ALLOWED_ORIGINS = join(",", var.web_origins)
-    DATABASE_SSL         = "true"
-    S3_REGION            = var.region
-    S3_BUCKET            = module.media.bucket_name
-    AI_PROVIDER          = "none"
-    OTEL_ENABLED         = "false"
-    OTEL_SERVICE_NAME    = "quest-api"
+    # CloudFront -> ALB: two trusted hops, so rate limits key on the real client IP.
+    TRUST_PROXY_HOPS  = "2"
+    DATABASE_SSL      = "true"
+    S3_REGION         = var.region
+    S3_BUCKET         = module.media.bucket_name
+    AI_PROVIDER       = "none"
+    OTEL_ENABLED      = "false"
+    OTEL_SERVICE_NAME = "quest-api"
   }
 
   # DATABASE_URL / REDIS_URL are assembled by the deploy pipeline from RDS/ElastiCache outputs plus

@@ -2,6 +2,7 @@
 
 - Architecture, conventions, classification, retention: [`../architecture/05_DATA_ARCHITECTURE.md`](../architecture/05_DATA_ARCHITECTURE.md)
 - Decisions: [ADR-002](../adr/ADR-002-postgresql-postgis-pgvector.md) (platform), [ADR-010](../adr/ADR-010-drizzle-sql-migrations.md) (migrations)
+- Identity & Profiles model, deletion cascade, export contract: [`IDENTITY_DATA_MODEL.md`](IDENTITY_DATA_MODEL.md)
 
 ## Migration authoring checklist
 

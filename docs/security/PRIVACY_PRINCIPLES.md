@@ -34,6 +34,18 @@ classified **RESTRICTED** (see `docs/architecture/05_DATA_ARCHITECTURE.md`).
 12. **Cross-border** — initial region UAE (ADR-008); residency assumptions documented with revisit
     triggers; no transfer of RESTRICTED data to AI providers without minimisation and review.
 
+## What Phase 01 enforces in code
+
+- Identity keys are immutable UUIDs; email/username are attributes; the DOB is never returned by
+  any endpoint or event — only the derived age band.
+- Age-band privacy policy (`AGE_BAND_PRIVACY_POLICY`) seeds defaults and rejects disallowed
+  changes for minors server-side; precise location is not a representable visibility.
+- Consent ledger (append-only, versioned, sourced); optional consents default to false.
+- Block precedence on every profile read; `BlockQueryPort` for later contexts.
+- Right of access/portability (`DataExportService`, one bundle per account, sections per context)
+  and right to erasure (`AccountDeletionJob` cascade + `identity.account.deleted`).
+- Per-column classification and retention: `IDENTITY_PRIVACY_CLASSIFICATION.md`.
+
 ## What Phase 00 already enforces in code
 
 - Analytics events reject nested objects and precise coordinates; consent-gated sink.
