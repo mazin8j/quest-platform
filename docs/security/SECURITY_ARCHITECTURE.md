@@ -9,13 +9,15 @@ Status legend: **Implemented** (code/tests exist), **Defined** (contract/infra c
   no local S3 endpoint; S3 credentials must be set together; AI model required if a provider is set.
 - **Implemented**: `.env.example` contains local-only defaults; `.gitignore` excludes `.env*`,
   tfstate, tfvars; `redactSecrets()` helper for any config echo.
-- **Implemented**: one canonical development loader (`loadDevEnv()` in `@quest/config`, applied by
-  `apps/api/src/cli/load-env.ts`). It reads only the git-ignored repository-root `.env`, never
+- **Implemented**: one canonical development loader (`loadDevEnv()` in `apps/api/src/cli/dev-env.ts`,
+  applied by `applyDevEnv()` in `apps/api/src/cli/load-env.ts`, which each command calls explicitly
+  so that importing a CLI as a library never mutates the environment). It reads only the git-ignored repository-root `.env`, never
   overrides a variable the environment already provides (so CI and injected production
   configuration always win), and applies nothing when `NODE_ENV` is `production` or `staging` —
   where it reports a stray file on stderr instead of ignoring it silently. Tested in
-  `packages/config/src/dev-env.test.ts`; `apps/api/test/cli-env.test.ts` fails if a CLI stops
-  applying it. Loaded variable names may be printed, never values.
+  `apps/api/test/dev-env.test.ts`; `apps/api/test/cli-env.test.ts` fails if a CLI stops applying it,
+  if the import contract regresses, or if the loader gains a dependency that must be built first.
+  Loaded variable names may be printed, never values.
 - **Defined**: Terraform `secrets` module creates Secrets Manager containers only; RDS master
   secret is RDS-managed; ECS execution role may read only the ARNs injected into the task.
 - **Implemented (Phase 01)**: access-token signing key `AUTH_JWT_SECRET` (≥ 32 chars) with

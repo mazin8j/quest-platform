@@ -26,9 +26,10 @@ cp .env.example .env            # local defaults; edit if ports clash
 
 There is exactly **one** local configuration file: **`.env` at the repository root**, copied from
 `.env.example`. It is git-ignored, holds local values only, and is never committed. Every
-repository script loads it through one mechanism — `loadDevEnv()` in `@quest/config`, applied by
-`apps/api/src/cli/load-env.ts`, which every CLI and `main.ts` import first — so commands work from
-the repository root or any subdirectory with nothing exported by hand:
+repository script loads it through one mechanism — `loadDevEnv()` in `apps/api/src/cli/dev-env.ts`,
+applied by `applyDevEnv()` (`apps/api/src/cli/load-env.ts`), which every command and `main.ts` call
+as their first step — so commands work from the repository root or any subdirectory with nothing
+exported by hand:
 
 ```bash
 pnpm db:migrate                 # no `export DATABASE_URL` needed
@@ -39,6 +40,19 @@ pnpm --filter @quest/api dev
 
 Each run prints one line naming the file it loaded (`QUEST_ENV_VERBOSE=true` adds the variable
 names, `QUEST_ENV_QUIET=true` silences it). Values are never printed.
+
+The loader is _called_ by each command, never applied by importing a module: `migrate.ts` and
+`openapi.ts` are also imported as libraries (by the integration harness and the OpenAPI contract
+test), and a module that reconfigured the process on import would silently change the environment
+of every test that touches it.
+
+The loader lives in the API CLI layer and imports **nothing but Node built-ins** — deliberately.
+Node resolves `@quest/*` through each package's compiled `dist/`, not through the TypeScript path
+mapping, so a bootstrap step imported from a workspace package fails on a fresh clone or whenever
+that package has not been rebuilt (`TypeError: loadDevEnv is not a function`). Keeping it
+dependency-free means `pnpm db:migrate` works before `pnpm build` has ever run. CLIs that boot the
+Nest application (`identity:*`, `openapi:generate`) do need built packages — run `pnpm build`
+first.
 
 **Precedence — highest first:**
 
@@ -131,14 +145,15 @@ docs/{architecture,api,security,data,adr,governance,roadmap,product}   documenta
 
 ## Troubleshooting
 
-| Symptom                                            | Fix                                                                                                           |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | use Node 22 (`nvm use`)                                                                                       |
-| API exits with `Invalid environment configuration` | the message lists the offending variables; compare with `.env.example`                                        |
-| `/ready` returns 503                               | `docker compose ps` — postgres/redis unhealthy; `pnpm infra:up` waits for health                              |
-| Migration status shows pending after `db:migrate`  | ensure `DATABASE_URL` points to the same DB; run `pnpm db:migrate:status`                                     |
-| `DATABASE_URL is required` from a `db:*` command   | no root `.env` (`cp .env.example .env`), or `QUEST_SKIP_DOTENV=true` is set — see "Environment configuration" |
-| Metro cannot resolve a workspace package           | run `pnpm build` (packages emit `dist/`), then restart Expo with `--clear`                                    |
-| Vitest decorator errors in the API                 | `unplugin-swc` must be installed (`pnpm install`); do not run tests with plain esbuild                        |
-| ESLint "requires type information"                 | run from the workspace (`pnpm lint`), not from an editor with a stale tsconfig                                |
-| Windows line-ending diffs                          | `git config core.autocrlf false` — `.gitattributes` enforces LF                                               |
+| Symptom                                            | Fix                                                                                                                                    |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | use Node 22 (`nvm use`)                                                                                                                |
+| API exits with `Invalid environment configuration` | the message lists the offending variables; compare with `.env.example`                                                                 |
+| `/ready` returns 503                               | `docker compose ps` — postgres/redis unhealthy; `pnpm infra:up` waits for health                                                       |
+| Migration status shows pending after `db:migrate`  | ensure `DATABASE_URL` points to the same DB; run `pnpm db:migrate:status`                                                              |
+| `DATABASE_URL is required` from a `db:*` command   | no root `.env` (`cp .env.example .env`), or `QUEST_SKIP_DOTENV=true` is set — see "Environment configuration"                          |
+| `TypeError: ... is not a function` from a CLI      | stale workspace `dist/`: run `pnpm build`. The environment loader itself is dependency-free, so this can only come from another import |
+| Metro cannot resolve a workspace package           | run `pnpm build` (packages emit `dist/`), then restart Expo with `--clear`                                                             |
+| Vitest decorator errors in the API                 | `unplugin-swc` must be installed (`pnpm install`); do not run tests with plain esbuild                                                 |
+| ESLint "requires type information"                 | run from the workspace (`pnpm lint`), not from an editor with a stale tsconfig                                                         |
+| Windows line-ending diffs                          | `git config core.autocrlf false` — `.gitattributes` enforces LF                                                                        |

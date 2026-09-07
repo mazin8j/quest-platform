@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { findRepositoryRoot, loadDevEnv, parseDotenv } from './dev-env';
+import { findRepositoryRoot, loadDevEnv, parseDotenv } from '../src/cli/dev-env';
 
 /** Builds a throwaway workspace: <root>/pnpm-workspace.yaml, <root>/.env, <root>/apps/api. */
 function workspace(envFile: string): { root: string; appDir: string } {

@@ -5,15 +5,15 @@
  *   - DATABASE_URL host is localhost/127.0.0.1/::1 (or ALLOW_DB_RESET=true is set explicitly)
  * There is intentionally NO production reset command in this repository.
  */
-import './load-env';
-
 import { Client } from 'pg';
 
+import { applyDevEnv } from './load-env';
 import { migrateUp } from './migrate';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', 'postgres', 'db']);
 
 async function main(): Promise<void> {
+  applyDevEnv();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required');
   const env = process.env.NODE_ENV ?? 'development';

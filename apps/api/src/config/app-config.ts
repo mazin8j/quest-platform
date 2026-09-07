@@ -12,7 +12,11 @@ import { z } from 'zod';
  * refuses to start on an invalid environment (fail-fast). Secrets are read here and nowhere else.
  * Documented in .env.example and docs/security/SECURITY_ARCHITECTURE.md.
  */
-/** Empty environment values ("VAR=") are treated as unset for optional variables. */
+/**
+ * Empty environment values ("VAR=") are treated as unset for optional variables — `.env.example`
+ * ships several placeholders that way, and since the CLI loader applies that file they must parse
+ * as "not configured" rather than as an invalid value.
+ */
 const optional = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
 
@@ -41,20 +45,20 @@ export const appConfigSchema = z
 
     REDIS_URL: z.url({ protocol: /^rediss?$/ }),
 
-    S3_ENDPOINT: z.url().optional(),
+    S3_ENDPOINT: optional(z.url()),
     S3_REGION: z.string().min(1).default('us-east-1'),
     S3_BUCKET: z.string().min(3),
-    S3_ACCESS_KEY_ID: z.string().optional(),
-    S3_SECRET_ACCESS_KEY: z.string().optional(),
+    S3_ACCESS_KEY_ID: optional(z.string()),
+    S3_SECRET_ACCESS_KEY: optional(z.string()),
     S3_FORCE_PATH_STYLE: booleanStringSchema.default(false),
 
     AI_PROVIDER: z.enum(['none', 'anthropic']).default('none'),
-    AI_MODEL_DEFAULT: z.string().optional(),
+    AI_MODEL_DEFAULT: optional(z.string()),
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 
     OTEL_ENABLED: booleanStringSchema.default(false),
     OTEL_SERVICE_NAME: z.string().default('quest-api'),
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+    OTEL_EXPORTER_OTLP_ENDPOINT: optional(z.url()),
 
     // ---- Identity (Phase 01, ADR-011) ----
     /** HMAC key for access tokens (>= 32 chars). Rotate by moving the old value to _PREVIOUS. */

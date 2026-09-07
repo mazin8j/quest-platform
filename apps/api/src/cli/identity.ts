@@ -9,8 +9,6 @@
  * The first SUPER_ADMIN can only be created here (no API path exists by design); afterwards
  * MANAGE_STAFF holders use POST /v1/admin/accounts/:id/roles.
  */
-import './load-env';
-
 import 'reflect-metadata';
 
 import { NestFactory } from '@nestjs/core';
@@ -20,8 +18,10 @@ import { AppModule } from '../app.module';
 import { AccountDeletionJob, DataExportService } from '../modules/identity';
 import { AccountRepository } from '../modules/identity/infrastructure/account.repository';
 import { LifecycleRepository } from '../modules/identity/infrastructure/lifecycle.repository';
+import { applyDevEnv } from './load-env';
 
 async function main(): Promise<void> {
+  applyDevEnv();
   const [command, ...args] = process.argv.slice(2);
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   try {

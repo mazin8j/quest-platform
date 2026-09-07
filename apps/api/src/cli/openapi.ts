@@ -3,12 +3,11 @@
  *   pnpm --filter @quest/api openapi:generate
  * CI/unit test `src/openapi/openapi.test.ts` fails when the committed file is stale.
  */
-import './load-env';
-
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { buildOpenApiDocument } from '../openapi/build-openapi';
+import { applyDevEnv } from './load-env';
 
 export const OPENAPI_OUTPUT = path.resolve(
   __dirname,
@@ -27,6 +26,7 @@ export function renderOpenApi(): string {
 }
 
 if (require.main === module) {
+  applyDevEnv();
   mkdirSync(path.dirname(OPENAPI_OUTPUT), { recursive: true });
   writeFileSync(OPENAPI_OUTPUT, renderOpenApi());
   console.warn(`OpenAPI written to ${OPENAPI_OUTPUT}`);

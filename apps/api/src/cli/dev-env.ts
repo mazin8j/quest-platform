@@ -4,6 +4,14 @@ import path from 'node:path';
 /**
  * Canonical development environment loading for QUEST.
  *
+ * This lives in the API CLI layer, not in `@quest/config`, on purpose. It is the very first thing
+ * an entry point runs, and Node resolves `@quest/*` through each package's `main` field — its
+ * compiled `dist/` — not through TypeScript path mapping. A loader imported from a workspace
+ * package therefore breaks whenever that package has not been rebuilt yet (the exact failure this
+ * file replaces: `TypeError: import_config.loadDevEnv is not a function` from a `dist/` predating
+ * the loader). Depending on nothing but Node built-ins, it works on a fresh clone before any build,
+ * which is the only acceptable contract for `pnpm db:migrate` and friends.
+ *
  * The repository has exactly one local configuration file: `.env` at the repository root (the
  * directory holding `pnpm-workspace.yaml`), created from `.env.example`. It is git-ignored and
  * never contains production values. Nothing in the applications reads a file: they read
