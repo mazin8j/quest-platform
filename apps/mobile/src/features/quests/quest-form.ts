@@ -24,6 +24,8 @@ export interface QuestFormInput {
   effortMinutes: string;
   completionWindowHours: string;
   visibility: string;
+  /** The owner's own audience choice. Trust & Safety may tighten it further, never loosen it. */
+  minimumAgeBand: string;
 }
 
 export const EMPTY_QUEST_FORM: QuestFormInput = {
@@ -37,6 +39,7 @@ export const EMPTY_QUEST_FORM: QuestFormInput = {
   effortMinutes: '30',
   completionWindowHours: '24',
   visibility: 'PUBLIC',
+  minimumAgeBand: 'TEEN_13_15',
 };
 
 export function validateQuestForm(input: QuestFormInput): {
@@ -79,7 +82,7 @@ function toContent(input: QuestFormInput): Record<string, unknown> {
     categoryKey: input.categoryKey,
     difficulty: input.difficulty,
     evidence: { types: [input.evidenceType] },
-    eligibility: {},
+    eligibility: { minimumAgeBand: input.minimumAgeBand },
   };
 }
 

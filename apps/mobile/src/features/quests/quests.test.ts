@@ -116,6 +116,14 @@ describe('quest composer validation', () => {
     expect(JSON.stringify(request)).not.toContain('state');
   });
 
+  it('carries the author own audience choice rather than hardcoding the loosest band', () => {
+    expect(toCreateRequest(valid).content.eligibility.minimumAgeBand).toBe('TEEN_13_15');
+    expect(
+      toCreateRequest({ ...valid, minimumAgeBand: 'ADULT' }).content.eligibility.minimumAgeBand,
+    ).toBe('ADULT');
+    expect(validateQuestForm({ ...valid, minimumAgeBand: 'GROWN_UPS' }).ok).toBe(false);
+  });
+
   it('omits empty safety notes instead of sending an empty string', () => {
     expect(toCreateRequest(valid).content.safetyNotes).toBeUndefined();
     expect(toCreateRequest({ ...valid, safetyNotes: 'Wear gloves.' }).content.safetyNotes).toBe(

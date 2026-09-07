@@ -1,21 +1,31 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  Permission,
   type QuestCard,
   type QuestDetail,
   type QuestSafetyBadge,
   evidenceRequirementSchema,
-  isStaff,
+  hasPermission,
 } from '@quest/types';
 
 import type { Principal } from '../../../common/auth/principal';
 import { ApiError } from '../../../common/filters/api-error';
 import { BLOCK_QUERY, PROFILE_QUERY } from '../../profiles';
 import type { BlockQueryPort, ProfileQueryPort } from '../../profiles';
-import { QuestAccess, questAccessFor, type ViewerContext } from '../domain/eligibility';
+import {
+  QuestAccess,
+  type ViewerContext,
+  publishedAgeBand,
+  questAccessFor,
+  visibleAgeBandsFor,
+} from '../domain/eligibility';
 import type { AssessmentRecord, QuestRecord } from '../domain/quest';
 import { ParticipationRepository } from '../infrastructure/participation.repository';
 import { QuestRepository } from '../infrastructure/quest.repository';
 import { QuestService, durationOf } from './quest.service';
+
+/** Upper bound on extra database round trips while refilling a page past blocked owners. */
+const MAX_DISCOVERY_PASSES = 5;
 
 /**
  * Read side: turns Quest rows into the views each audience is allowed to see.
@@ -45,7 +55,7 @@ export class QuestViewService {
         ageBand: null,
         emailVerified: false,
         countryCode: null,
-        isStaff: false,
+        canViewSupport: false,
         blocked: false,
       };
     }
@@ -60,7 +70,9 @@ export class QuestViewService {
       ageBand: principal.ageBand === 'UNDER_MINIMUM' ? null : principal.ageBand,
       emailVerified: principal.emailVerified,
       countryCode,
-      isStaff: isStaff(principal.roles),
+      // The permission the RBAC matrix actually grants, not "has any staff role": an ANALYST or
+      // READ_ONLY account is staff and has no business reading an unpublished Quest (P02-05).
+      canViewSupport: hasPermission(principal.roles, Permission.VIEW_QUEST_SUPPORT),
       blocked,
     };
   }
@@ -75,7 +87,7 @@ export class QuestViewService {
 
     const isOwner = viewer.accountId === quest.ownerAccountId;
     const [owner, assessment, participating] = await Promise.all([
-      this.ownerCard(quest.ownerAccountId),
+      this.ownerCard(quest.ownerAccountId, viewer.accountId),
       this.quests.latestAssessment(questId),
       viewer.accountId
         ? this.participations.findActive(questId, viewer.accountId).then((p) => p !== undefined)
@@ -109,29 +121,37 @@ export class QuestViewService {
   /**
    * Discovery: published, public Quests, newest first. Deliberately unranked — recommendation and
    * ranking are later phases and must not appear here.
+   *
+   * Block filtering happens after the query, so the page is refilled until it holds `limit + 1`
+   * survivors or the underlying rows run out. Filtering a fixed `limit + 1` fetch and letting
+   * `toPage` read `hasMore` off the shortened array ended the feed early and made the rest of the
+   * catalogue unreachable through the API (audit P02-19).
    */
   async listDiscoverable(
     principal: Principal | null,
     filter: { categoryKey?: string; difficulty?: string },
     page: { limit: number; cursor?: { createdAt: Date; id: string } },
   ): Promise<Array<QuestCard & { cursorAt: Date }>> {
-    const rows = await this.quests.listDiscoverable(
-      { ...filter, now: new Date() },
-      // One extra row lets the caller report `hasMore` honestly after blocked owners are removed.
-      page,
-    );
-    if (!principal) return this.toCards(rows, null);
-
-    // Block precedence: a Quest by a blocked owner is not in the list at all.
+    const viewerBand = principal?.ageBand === 'UNDER_MINIMUM' ? null : (principal?.ageBand ?? null);
+    const query = { ...filter, now: new Date(), ageBands: visibleAgeBandsFor(viewerBand) };
     const visible: QuestRecord[] = [];
-    for (const quest of rows) {
-      const blocked =
-        quest.ownerAccountId === principal.accountId
-          ? false
-          : await this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId);
-      if (!blocked) visible.push(quest);
+    let cursor = page.cursor;
+    for (let pass = 0; pass < MAX_DISCOVERY_PASSES && visible.length < page.limit; pass += 1) {
+      const rows = await this.quests.listDiscoverable(query, { limit: page.limit, cursor });
+      if (rows.length === 0) break;
+      for (const quest of rows) {
+        // Block precedence: a Quest by a blocked owner is not in the list at all.
+        const blocked =
+          !principal || quest.ownerAccountId === principal.accountId
+            ? false
+            : await this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId);
+        if (!blocked) visible.push(quest);
+      }
+      const last = rows[rows.length - 1];
+      if (!last || rows.length < page.limit) break;
+      cursor = { createdAt: last.createdAt, id: last.id };
     }
-    return this.toCards(visible, principal.accountId);
+    return this.toCards(visible, principal?.accountId ?? null);
   }
 
   private async toCards(
@@ -140,8 +160,11 @@ export class QuestViewService {
   ): Promise<Array<QuestCard & { cursorAt: Date }>> {
     if (rows.length === 0) return [];
     const [owners, assessments, active] = await Promise.all([
-      this.profiles.publicCardsFor([...new Set(rows.map((r) => r.ownerAccountId))]),
-      Promise.all(rows.map((r) => this.quests.latestAssessment(r.id))),
+      this.profiles.publicCardsFor(
+        [...new Set(rows.map((r) => r.ownerAccountId))],
+        viewerAccountId,
+      ),
+      this.quests.latestAssessmentsFor(rows.map((r) => r.id)),
       viewerAccountId
         ? this.participations.activeQuestIds(
             viewerAccountId,
@@ -149,20 +172,20 @@ export class QuestViewService {
           )
         : Promise.resolve(new Set<string>()),
     ]);
-    return rows.map((quest, index) => ({
+    return rows.map((quest) => ({
       ...this.core(quest, {
         accountId: quest.ownerAccountId,
         username: owners[quest.ownerAccountId]?.username ?? null,
         displayName: owners[quest.ownerAccountId]?.displayName ?? null,
       }),
-      safety: this.safetyBadge(quest, assessments[index] ?? null),
+      safety: this.safetyBadge(quest, assessments.get(quest.id) ?? null),
       participating: active.has(quest.id),
       cursorAt: quest.createdAt,
     }));
   }
 
-  private async ownerCard(accountId: string) {
-    const cards = await this.profiles.publicCardsFor([accountId]);
+  private async ownerCard(accountId: string, viewerAccountId: string | null) {
+    const cards = await this.profiles.publicCardsFor([accountId], viewerAccountId);
     return {
       accountId,
       username: cards[accountId]?.username ?? null,
@@ -171,6 +194,8 @@ export class QuestViewService {
   }
 
   private core(quest: QuestRecord, owner: QuestCard['owner']) {
+    const declared = this.questService.eligibilityOf(quest);
+    const published = publishedAgeBand(quest);
     return {
       questId: quest.id,
       state: quest.state,
@@ -182,7 +207,10 @@ export class QuestViewService {
       categoryKey: quest.categoryKey as QuestCard['categoryKey'],
       difficulty: quest.difficulty as QuestCard['difficulty'],
       duration: durationOf(quest),
-      eligibility: this.questService.eligibilityOf(quest),
+      // The band that is actually enforced. A safety decision can tighten it above what the owner
+      // declared, and advertising the looser draft value showed a client an accept affordance for
+      // an adults-only Quest (audit P02-29).
+      eligibility: published ? { ...declared, minimumAgeBand: published } : declared,
       location: quest.locationCountryCode
         ? { countryCode: quest.locationCountryCode, label: quest.locationLabel ?? undefined }
         : null,

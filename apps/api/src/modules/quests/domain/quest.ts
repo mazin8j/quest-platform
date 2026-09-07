@@ -86,6 +86,9 @@ export function transitionQuest(from: QuestState, transition: QuestTransition): 
   return next;
 }
 
+/** The highest minimum age the three-band model can express. */
+export const STRICTEST_ENFORCEABLE_AGE = 18;
+
 export interface PublishDecision {
   allowed: boolean;
   /** Machine-readable blockers, safe to show the owner. Empty when `allowed`. */
@@ -165,6 +168,12 @@ export function evaluatePublish(input: PublishGateInput): PublishDecision {
 
     const requiredAge = assessment.restrictions?.minimumAge;
     if (requiredAge !== undefined) {
+      // The platform models three bands and the strictest is "adult". A restriction demanding
+      // more than that (the safety contract allows up to 21) cannot be enforced, so it is refused
+      // rather than silently under-applied as 18+ (audit P02-31).
+      if (requiredAge > STRICTEST_ENFORCEABLE_AGE) {
+        blockers.push('SAFETY_AGE_RESTRICTION_UNSUPPORTED');
+      }
       minimumAgeBand = strictestAgeBand(minimumAgeBand, ageBandForMinimumAge(requiredAge));
     }
   }
@@ -172,7 +181,14 @@ export function evaluatePublish(input: PublishGateInput): PublishDecision {
   return { allowed: blockers.length === 0, blockers, minimumAgeBand };
 }
 
-/** Countries a published Quest may be accepted from, folding safety restrictions into the owner's. */
+/**
+ * Countries a published Quest may be accepted from, folding the *published* assessment's
+ * restrictions into the owner's declared lists.
+ *
+ * Trust & Safety may restrict a Quest geographically as well as by age; recording that restriction
+ * and then evaluating acceptance against the owner's lists alone would leave the geographic half
+ * of a RESTRICTED decision unenforced (audit P02-02). Every acceptance check goes through here.
+ */
 export function effectiveCountryRules(
   declared: { allowedCountries: string[]; blockedCountries: string[] },
   assessment: AssessmentRecord | null,

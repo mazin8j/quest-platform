@@ -20,7 +20,8 @@
     "openapi:generate": "tsx src/cli/openapi.ts",
     "identity:grant-role": "tsx src/cli/identity.ts grant-role",
     "identity:process-deletions": "tsx src/cli/identity.ts process-deletions",
-    "identity:process-exports": "tsx src/cli/identity.ts process-exports"
+    "identity:process-exports": "tsx src/cli/identity.ts process-exports",
+    "quests:process-expiries": "tsx src/cli/quests.ts process-expiries"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",

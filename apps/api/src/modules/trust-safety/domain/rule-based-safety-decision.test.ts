@@ -99,6 +99,19 @@ describe('rule-based safety decision', () => {
     expect(result.state).toBe('REVIEW_REQUIRED');
   });
 
+  it('never allows content it did not examine (audit P02-27)', async () => {
+    const empty: Array<Record<string, string>> = [
+      {},
+      { instructions: '' },
+      { instructions: '   ' },
+      { a: 'hi' },
+    ];
+    for (const text of empty) {
+      const result = await engine.assess(input(text));
+      expect(result.state, JSON.stringify(text)).toBe('REVIEW_REQUIRED');
+    }
+  });
+
   it('is fail-closed on malformed input: never ALLOWED', async () => {
     const malformed = [
       { subjectType: '', subjectId: 'x', subjectContentVersion: 'v', text: {} },
@@ -148,6 +161,25 @@ describe('safety lexicon', () => {
     );
     expect(spaced.state).toBe('REVIEW_REQUIRED');
     expect(normaliseForMatching('  A   B \n C ')).toBe('a b c');
+  });
+
+  it('cannot be evaded by invisible characters or fullwidth forms (audit P02-32)', async () => {
+    // Each of these reads as "gun" to a person, and every one of them defeated the whole lexicon
+    // before normalisation was hardened.
+    const evasions = [
+      'Bring a g\u200Bun to the meeting point and photograph it.',
+      'Bring a g\u2060un to the meeting point and photograph it.',
+      'Bring a \uFF47\uFF55\uFF4E to the meeting point and photograph it.',
+      'Bring a g\uFEFFun to the meeting point and photograph it.',
+    ];
+    for (const instructions of evasions) {
+      const result = await engine.assess(input({ instructions }));
+      expect(result.state, JSON.stringify(instructions)).not.toBe('ALLOWED');
+      expect(
+        result.signals.map((s) => s.category),
+        instructions,
+      ).toContain('WEAPONS');
+    }
   });
 
   it('keeps every rule anchored so it cannot match ordinary language', () => {

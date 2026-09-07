@@ -141,6 +141,10 @@ CREATE TABLE quest_safety_assessment (
   ai_invocation_ref        text,
   supersedes_assessment_id uuid REFERENCES quest_safety_assessment (id) ON DELETE RESTRICT,
   assessed_at              timestamptz NOT NULL DEFAULT now(),
+  -- Commit-independent insertion order. `assessed_at` defaults to now() = transaction START time
+  -- and the id is client-generated, so neither orders two concurrent decisions correctly; "the
+  -- latest assessment" is a safety-critical question, so it is answered by a sequence (P02-30).
+  seq                      bigserial NOT NULL,
 
   CONSTRAINT quest_assessment_state_check CHECK (
     state IN ('UNASSESSED', 'ALLOWED', 'ALLOWED_WITH_WARNING', 'RESTRICTED',
@@ -152,7 +156,7 @@ CREATE TABLE quest_safety_assessment (
 
 -- Latest assessment for a Quest (and for a specific content hash) — the publish gate's read.
 CREATE INDEX quest_assessment_latest_idx
-  ON quest_safety_assessment (quest_id, assessed_at DESC, id DESC);
+  ON quest_safety_assessment (quest_id, seq DESC);
 --> statement-breakpoint
 CREATE INDEX quest_assessment_hash_idx ON quest_safety_assessment (quest_id, content_hash);
 --> statement-breakpoint

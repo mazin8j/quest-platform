@@ -23,6 +23,11 @@ import { radii, spacing, typography, useTheme } from '../../../src/theme';
 
 const DIFFICULTIES = ['EASY', 'MODERATE', 'HARD', 'EXPERT'] as const;
 const EVIDENCE = ['PHOTO', 'VIDEO', 'TEXT_NOTE', 'CHECKLIST'] as const;
+const AUDIENCES = [
+  { value: 'TEEN_13_15', label: 'anyone 13+' },
+  { value: 'TEEN_16_17', label: '16 and over' },
+  { value: 'ADULT', label: 'adults only' },
+] as const;
 
 /**
  * Quest composer. It creates a DRAFT and nothing more — publication is a separate, deliberate
@@ -103,6 +108,13 @@ export default function NewQuestScreen() {
           options={DIFFICULTIES.map((d) => ({ value: d, label: d.toLowerCase() }))}
           selected={form.difficulty}
           onSelect={set('difficulty')}
+        />
+        <Choices
+          label="Who can take this on"
+          error={errors.eligibility}
+          options={AUDIENCES.map((a) => ({ value: a.value, label: a.label }))}
+          selected={form.minimumAgeBand}
+          onSelect={set('minimumAgeBand')}
         />
         <Choices
           label="Evidence"

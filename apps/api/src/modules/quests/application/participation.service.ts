@@ -67,28 +67,34 @@ export class ParticipationService {
     const quest = await this.quests.findById(questId);
     if (!quest || quest.state === QuestState.ERASED) throw ApiError.notFound('Quest');
 
-    const [blocked, country] = await Promise.all([
+    const [blocked, country, effectiveEligibility] = await Promise.all([
       this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId),
       this.profiles.countryFor(principal.accountId),
+      // Folds the *published* assessment's country restrictions into the owner's declared lists,
+      // so the geographic half of a RESTRICTED decision is enforced, not merely recorded (P02-02).
+      this.questService.effectiveEligibilityOf(quest),
     ]);
-    // A blocked viewer must not learn that the Quest exists.
-    if (blocked) throw ApiError.notFound('Quest');
 
     const eligibility = evaluateAcceptEligibility({
       quest,
-      eligibility: this.questService.eligibilityOf(quest),
+      eligibility: effectiveEligibility,
       publishedMinimumAgeBand: this.questService.publishedAgeBandOf(quest),
       viewer: {
         accountId: principal.accountId,
         ageBand: principal.ageBand === 'UNDER_MINIMUM' ? null : principal.ageBand,
         emailVerified: principal.emailVerified,
         countryCode: country,
-        isStaff: false,
-        blocked: false,
+        // Acceptance is never a staff action: a support permission must not open a participation
+        // path an ordinary member would be refused.
+        canViewSupport: false,
+        blocked,
       },
       now: new Date(),
     });
     if (!eligibility.eligible) {
+      // A refusal about a Quest the caller may not know exists is a 404, never an explained 403
+      // — otherwise the status code alone confirms someone else's draft (P02-01 / P02-06).
+      if (eligibility.hidden) throw ApiError.notFound('Quest');
       throw ApiError.forbidden(`Not eligible: ${eligibility.reasons.join(', ')}`);
     }
     if (quest.publishedVersion === null) throw ApiError.conflict('Quest is not published');

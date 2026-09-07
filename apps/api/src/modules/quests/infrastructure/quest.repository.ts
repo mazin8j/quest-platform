@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { QuestState, QuestVisibility, SafetyAssessment } from '@quest/types';
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -148,7 +148,13 @@ export class QuestRepository {
    * later phase and must not be smuggled in here.
    */
   async listDiscoverable(
-    filter: { categoryKey?: string; difficulty?: string; now: Date },
+    filter: {
+      categoryKey?: string;
+      difficulty?: string;
+      now: Date;
+      /** Age bands the caller may be shown — an age-gated Quest is not listed to anyone below it. */
+      ageBands: string[];
+    },
     page: { limit: number; cursor?: { createdAt: Date; id: string } },
     tx?: Executor,
   ): Promise<QuestRecord[]> {
@@ -157,6 +163,8 @@ export class QuestRepository {
       eq(quest.visibility, 'PUBLIC'),
       or(isNull(quest.availableFrom), lt(quest.availableFrom, filter.now)),
       or(isNull(quest.availableUntil), sql`${quest.availableUntil} > ${filter.now.toISOString()}`),
+      // The published band, never the editable draft eligibility (audit P02-07).
+      inArray(quest.publishedMinimumAgeBand, filter.ageBands),
     ];
     if (filter.categoryKey) conditions.push(eq(quest.categoryKey, filter.categoryKey));
     if (filter.difficulty) conditions.push(eq(quest.difficulty, filter.difficulty));
@@ -174,12 +182,74 @@ export class QuestRepository {
     return rows.map(toQuest);
   }
 
-  async listByOwnerForErasure(ownerAccountId: string, tx?: Executor): Promise<QuestRecord[]> {
+  /**
+   * Quests an account owns, for erasure. Bounded and row-locked on purpose:
+   *  - `FOR UPDATE` because the erasure then cancels other people's attempts on these rows, and an
+   *    unlocked read let a concurrent `accept()` slip an ACCEPTED attempt onto a Quest that was
+   *    about to be erased (audit P02-08);
+   *  - `LIMIT` because an unbounded read of every quest an account ever wrote, inside the account
+   *    deletion transaction, made a large account impossible to delete at all (audit P02-13). The
+   *    caller drains it in batches.
+   *
+   * Rows are locked in `id` order so this and the staff/owner withdrawal paths (which lock a
+   * single quest then its participations) can never build a lock cycle (audit P02-12).
+   */
+  async listByOwnerForErasure(
+    ownerAccountId: string,
+    limit: number,
+    tx: Executor,
+  ): Promise<QuestRecord[]> {
+    const rows = await tx
+      .select()
+      .from(quest)
+      .where(and(eq(quest.ownerAccountId, ownerAccountId), sql`${quest.state} <> 'ERASED'`))
+      .orderBy(quest.id)
+      .limit(limit)
+      .for('update');
+    return rows.map(toQuest);
+  }
+
+  /** Owner's quests for a data export: bounded, deterministically ordered, newest first. */
+  async listByOwnerForExport(
+    ownerAccountId: string,
+    limit: number,
+    tx?: Executor,
+  ): Promise<QuestRecord[]> {
     const rows = await this.exec(tx)
       .select()
       .from(quest)
-      .where(eq(quest.ownerAccountId, ownerAccountId));
+      .where(eq(quest.ownerAccountId, ownerAccountId))
+      .orderBy(desc(quest.createdAt), desc(quest.id))
+      .limit(limit);
     return rows.map(toQuest);
+  }
+
+  /** Quests in a non-terminal state owned by one account (abuse control, audit P02-24). */
+  async countActiveForOwner(ownerAccountId: string, tx?: Executor): Promise<number> {
+    const rows = await this.exec(tx)
+      .select({ total: count() })
+      .from(quest)
+      .where(
+        and(
+          eq(quest.ownerAccountId, ownerAccountId),
+          inArray(quest.state, ['DRAFT', 'IN_REVIEW', 'PUBLISHED']),
+        ),
+      );
+    return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Clears sanctions recorded by an account that is being erased: the staff member's id and their
+   * free-text reason sit on other people's quests and are not covered by owner erasure (P02-14).
+   * The ledger keeps the sanction itself.
+   */
+  async clearSanctionsBy(staffAccountId: string, tx: Executor): Promise<number> {
+    const rows = await tx
+      .update(quest)
+      .set({ suspendedBy: null, suspensionReason: null })
+      .where(eq(quest.suspendedBy, staffAccountId))
+      .returning({ id: quest.id });
+    return rows.length;
   }
 
   // ---- categories ----
@@ -237,14 +307,49 @@ export class QuestRepository {
     return toAssessment(row);
   }
 
+  /**
+   * The most recent decision, by insertion sequence. Not by `assessed_at`: that defaults to the
+   * transaction start time and the id is client-generated, so neither orders two concurrent
+   * decisions correctly — and "which decision is current" is a safety question (audit P02-30).
+   */
   async latestAssessment(questId: string, tx?: Executor): Promise<AssessmentRecord | undefined> {
     const rows = await this.exec(tx)
       .select()
       .from(questSafetyAssessment)
       .where(eq(questSafetyAssessment.questId, questId))
-      .orderBy(desc(questSafetyAssessment.assessedAt), desc(questSafetyAssessment.id))
+      .orderBy(desc(questSafetyAssessment.seq))
       .limit(1);
     return rows[0] ? toAssessment(rows[0]) : undefined;
+  }
+
+  async findAssessmentById(id: string, tx?: Executor): Promise<AssessmentRecord | undefined> {
+    const rows = await this.exec(tx)
+      .select()
+      .from(questSafetyAssessment)
+      .where(eq(questSafetyAssessment.id, id))
+      .limit(1);
+    return rows[0] ? toAssessment(rows[0]) : undefined;
+  }
+
+  /** Latest assessment for many Quests in one query (list views were N+1 without it). */
+  async latestAssessmentsFor(
+    questIds: string[],
+    tx?: Executor,
+  ): Promise<Map<string, AssessmentRecord>> {
+    if (questIds.length === 0) return new Map();
+    const rows = await this.exec(tx)
+      .select()
+      .from(questSafetyAssessment)
+      .where(
+        and(
+          inArray(questSafetyAssessment.questId, questIds),
+          sql`${questSafetyAssessment.seq} = (
+            SELECT max(inner_a.seq) FROM quest_safety_assessment inner_a
+            WHERE inner_a.quest_id = ${questSafetyAssessment.questId}
+          )`,
+        ),
+      );
+    return new Map(rows.map((row) => [row.questId, toAssessment(row)]));
   }
 
   async listAssessments(
@@ -256,7 +361,7 @@ export class QuestRepository {
       .select()
       .from(questSafetyAssessment)
       .where(eq(questSafetyAssessment.questId, questId))
-      .orderBy(desc(questSafetyAssessment.assessedAt), desc(questSafetyAssessment.id))
+      .orderBy(desc(questSafetyAssessment.seq))
       .limit(limit);
     return rows.map(toAssessment);
   }

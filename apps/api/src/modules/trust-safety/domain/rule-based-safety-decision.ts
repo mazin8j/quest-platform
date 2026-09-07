@@ -24,6 +24,9 @@ export const SAFETY_POLICY_VERSION_PHASE02 = 'quest-safety-policy@1';
 /** Minimum age applied when a signal is adults-only. */
 const ADULT_MINIMUM_AGE = 18;
 
+/** Below this there is nothing to decide about, so the engine refuses rather than allows. */
+const MINIMUM_ASSESSABLE_LENGTH = 10;
+
 const WARNING_COPY: Readonly<Record<string, string>> = {
   DANGEROUS_PHYSICAL_ACTIVITY:
     'Physical activity: judge your own fitness, stop if you feel unwell, and do not attempt this alone if you are unsure.',
@@ -54,6 +57,11 @@ export class RuleBasedSafetyDecision implements SafetyDecisionPort {
 
   private decide(valid: SafetyAssessmentInput): SafetyAssessment {
     const text = normaliseForMatching(Object.values(valid.text).join('\n'));
+    // The one path that could reach ALLOWED without examining anything: nothing to examine. A
+    // caller that submits no text has not been assessed, so it is a review case (audit P02-27).
+    if (text.length < MINIMUM_ASSESSABLE_LENGTH) {
+      return this.review(valid, 'No assessable content was submitted');
+    }
     const matches = SAFETY_LEXICON.filter((rule) => rule.pattern.test(text));
     const signals: SafetyRiskSignal[] = dedupeSignals(matches);
 

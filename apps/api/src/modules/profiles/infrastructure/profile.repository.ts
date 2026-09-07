@@ -176,6 +176,18 @@ export class ProfileRepository {
     return rows[0] ? toPrivacy(rows[0]) : undefined;
   }
 
+  async getPrivacyMany(
+    accountIds: ReadonlyArray<string>,
+    tx?: Executor,
+  ): Promise<Map<string, PrivacyRecord>> {
+    if (accountIds.length === 0) return new Map();
+    const rows = await this.exec(tx)
+      .select()
+      .from(privacySettings)
+      .where(inArray(privacySettings.accountId, [...accountIds]));
+    return new Map(rows.map((row) => [row.accountId, toPrivacy(row)]));
+  }
+
   async upsertPrivacy(
     input: Omit<PrivacyRecord, 'updatedAt'>,
     tx?: Executor,

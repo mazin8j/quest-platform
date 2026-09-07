@@ -59,7 +59,7 @@ function viewer(overrides: Partial<ViewerContext> = {}): ViewerContext {
     ageBand: 'ADULT',
     emailVerified: true,
     countryCode: 'JO',
-    isStaff: false,
+    canViewSupport: false,
     blocked: false,
     ...overrides,
   };
@@ -70,7 +70,7 @@ const ANONYMOUS: ViewerContext = {
   ageBand: null,
   emailVerified: false,
   countryCode: null,
-  isStaff: false,
+  canViewSupport: false,
   blocked: false,
 };
 
@@ -88,9 +88,9 @@ describe('read access', () => {
   });
 
   it('gives staff access for support work', () => {
-    expect(questAccessFor(quest({ state: QuestState.SUSPENDED }), viewer({ isStaff: true }))).toBe(
-      QuestAccess.OWNER,
-    );
+    expect(
+      questAccessFor(quest({ state: QuestState.SUSPENDED }), viewer({ canViewSupport: true })),
+    ).toBe(QuestAccess.OWNER);
   });
 
   it('hides — never forbids — an unpublished Quest from everyone else', () => {
@@ -123,7 +123,7 @@ describe('read access', () => {
     expect(questAccessFor(quest(), viewer({ accountId: OWNER, blocked: true }))).toBe(
       QuestAccess.OWNER,
     );
-    expect(questAccessFor(quest(), viewer({ isStaff: true, blocked: true }))).toBe(
+    expect(questAccessFor(quest(), viewer({ canViewSupport: true, blocked: true }))).toBe(
       QuestAccess.OWNER,
     );
   });
@@ -169,16 +169,15 @@ describe('accept eligibility', () => {
     expect(evaluateAcceptEligibility({ ...base, viewer: viewer() })).toEqual({
       eligible: true,
       reasons: [],
+      hidden: false,
     });
   });
 
+  // Refusals the caller is entitled to an explanation for: they can see the Quest, they just
+  // cannot take it on. These come back as an explained 403.
   const refusals: Array<[string, Record<string, unknown>, string]> = [
     ['an anonymous caller', { viewer: ANONYMOUS }, 'AUTHENTICATION_REQUIRED'],
-    ['a blocked viewer', { viewer: viewer({ blocked: true }) }, 'BLOCKED'],
     ['the owner', { viewer: viewer({ accountId: OWNER }) }, 'OWNER_CANNOT_PARTICIPATE'],
-    ['an unpublished Quest', { quest: quest({ state: QuestState.DRAFT }) }, 'QUEST_NOT_PUBLISHED'],
-    ['a suspended Quest', { quest: quest({ state: QuestState.SUSPENDED }) }, 'QUEST_NOT_PUBLISHED'],
-    ['an archived Quest', { quest: quest({ state: QuestState.ARCHIVED }) }, 'QUEST_NOT_PUBLISHED'],
     [
       'a closed availability window',
       { quest: quest({ availableUntil: new Date(NOW.getTime() - HOUR) }) },
@@ -219,18 +218,71 @@ describe('accept eligibility', () => {
       const result = evaluateAcceptEligibility({ ...base, viewer: viewer(), ...overrides });
       expect(result.eligible).toBe(false);
       expect(result.reasons).toContain(reason);
+      expect(result.hidden).toBe(false);
     });
   }
 
-  it('uses the PUBLISHED age band, not the draft content, so an edit cannot loosen the gate', () => {
-    // The Quest row says TEEN_13_15 in its (edited) content, but it was published as ADULT.
+  // Refusals that must not confirm the Quest exists: the caller could not read it either, so the
+  // acceptance endpoint must answer exactly as the read endpoint does (audit P02-01 / P02-06).
+  const concealed: Array<[string, Record<string, unknown>]> = [
+    ['a blocked viewer', { viewer: viewer({ blocked: true }) }],
+    ['someone else draft', { quest: quest({ state: QuestState.DRAFT }) }],
+    ['a suspended Quest', { quest: quest({ state: QuestState.SUSPENDED }) }],
+    ['an archived Quest', { quest: quest({ state: QuestState.ARCHIVED }) }],
+    ['a PRIVATE Quest', { quest: quest({ visibility: 'PRIVATE' }) }],
+    [
+      'an age-gated Quest below the viewer band',
+      {
+        quest: quest({ publishedMinimumAgeBand: 'ADULT' }),
+        viewer: viewer({ ageBand: 'TEEN_13_15' }),
+        publishedMinimumAgeBand: 'ADULT' as const,
+      },
+    ],
+  ];
+
+  for (const [label, overrides] of concealed) {
+    it(`conceals ${label} rather than explaining the refusal`, () => {
+      const result = evaluateAcceptEligibility({ ...base, viewer: viewer(), ...overrides });
+      expect(result.eligible).toBe(false);
+      expect(result.hidden).toBe(true);
+      expect(result.reasons).toEqual(['NOT_FOUND']);
+    });
+  }
+
+  it('refuses a Quest whose blocked-country rule cannot be evaluated for this viewer', () => {
     const result = evaluateAcceptEligibility({
       ...base,
+      eligibility: eligibility({ blockedCountries: ['FR'] }),
+      viewer: viewer({ countryCode: null }),
+    });
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('COUNTRY_UNKNOWN');
+  });
+
+  it('uses the PUBLISHED age band, not the draft content, so an edit cannot loosen the gate', () => {
+    // The Quest row says TEEN_13_15 in its (edited) content, but it was published as ADULT: the
+    // published band is what governs, and it hides the Quest from a 16-year-old entirely.
+    const questRow = quest({ publishedMinimumAgeBand: 'ADULT' });
+    const teen = viewer({ ageBand: 'TEEN_16_17' });
+    expect(questAccessFor(questRow, teen)).toBe(QuestAccess.HIDDEN);
+    const result = evaluateAcceptEligibility({
+      ...base,
+      quest: questRow,
       eligibility: eligibility({ minimumAgeBand: 'TEEN_13_15' }),
       publishedMinimumAgeBand: 'ADULT',
-      viewer: viewer({ ageBand: 'TEEN_16_17' }),
+      viewer: teen,
     });
-    expect(result.reasons).toContain('AGE_RESTRICTED');
+    expect(result.eligible).toBe(false);
+    expect(result.hidden).toBe(true);
+    // ...and an adult sees it and is eligible, so the gate is the band and nothing else.
+    expect(
+      evaluateAcceptEligibility({
+        ...base,
+        quest: questRow,
+        publishedMinimumAgeBand: 'ADULT',
+        viewer: viewer({ ageBand: 'ADULT' }),
+      }).eligible,
+    ).toBe(true);
   });
 
   it('treats a viewer with no known age band as ineligible (fail-closed)', () => {

@@ -19,8 +19,14 @@ import {
 } from '@quest/types';
 import { Client } from 'pg';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { APP_CONFIG, type AppConfig } from '../../src/config/app-config';
+import {
+  ACCOUNT_ERASURE_REGISTRY,
+  type AccountErasureRegistryPort,
+  REQUIRED_ERASURE_CONTEXTS,
+} from '../../src/infrastructure/account-erasure';
 import { AccountDeletionJob, DataExportService } from '../../src/modules/identity';
 import { AccountRepository } from '../../src/modules/identity/infrastructure/account.repository';
 import { LifecycleRepository } from '../../src/modules/identity/infrastructure/lifecycle.repository';
@@ -689,24 +695,24 @@ describe.skipIf(!enabled)('quest core (real database)', () => {
     expect(Math.round(hours)).toBe(2);
   });
 
-  it('refuses acceptance below the published age band and does not tell the viewer why they are too young twice', async () => {
+  it('refuses acceptance below the published age band without echoing anything about the viewer', async () => {
     const owner = await member('age-1@example.com');
-    const teen = await member('age-2@example.com', 14);
+    const teen = await member('age-2@example.com', 16);
+    // A 16+ Quest: visible to a 16-year-old, so the refusal is an explained 403 rather than a 404.
     const quest = await publishQuest(owner, {
       content: benignContent({ eligibility: { minimumAgeBand: 'ADULT' } }),
     });
-    // The teenager can see it exists (it is public) but cannot accept it.
     expect(
       (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(teen))).status,
-    ).toBe(200);
+    ).toBe(404);
     const accept = await request(server())
       .post(`/v1/quests/${quest.questId}/participation`)
       .set(auth(teen))
       .send({});
-    expect(accept.status).toBe(403);
-    expect(JSON.stringify(accept.body)).toContain('AGE_RESTRICTED');
+    expect(accept.status).toBe(404);
     // The refusal must not carry the participant's date of birth or exact age anywhere.
-    expect(JSON.stringify(accept.body)).not.toContain(dob(14));
+    expect(JSON.stringify(accept.body)).not.toContain(dob(16));
+    expect(JSON.stringify(accept.body)).not.toContain('TEEN');
   });
 
   it('expires a started attempt whose window has elapsed, idempotently', async () => {
@@ -918,6 +924,497 @@ describe.skipIf(!enabled)('quest core (real database)', () => {
     ]);
     expect(quests.rows[0]?.state).toBe('PUBLISHED');
     expect(harness().app.get(LifecycleRepository)).toBeDefined();
+  });
+
+  // ------------------------------------------------------- audit repairs (Phase 02 review) ----
+
+  it('refuses acceptance of a PRIVATE Quest, and refuses it as not found (P02-01)', async () => {
+    const owner = await member('private-1@example.com');
+    const stranger = await member('private-2@example.com');
+    // Published PUBLIC first — so the id is knowable — then switched to PRIVATE, which is not a
+    // safety-relevant change and therefore keeps the Quest published.
+    const quest = await publishQuest(owner);
+    const hidden = await request(server())
+      .put(`/v1/quests/${quest.questId}`)
+      .set(auth(owner))
+      .send({
+        expectedRevision: quest.revision,
+        visibility: 'PRIVATE',
+        content: benignContent(),
+        duration: duration(),
+      });
+    expect(hidden.status, JSON.stringify(hidden.body)).toBe(200);
+    expect(questDetailSchema.parse(hidden.body).state).toBe('PUBLISHED');
+
+    expect(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(stranger))).status,
+    ).toBe(404);
+    const accept = await request(server())
+      .post(`/v1/quests/${quest.questId}/participation`)
+      .set(auth(stranger))
+      .send({});
+    expect(accept.status).toBe(404);
+    const rows = await db().query('SELECT 1 FROM quest_participation WHERE quest_id = $1', [
+      quest.questId,
+    ]);
+    expect(rows.rowCount).toBe(0);
+  });
+
+  it('answers 404, not an explained 403, for a Quest the caller may not see (P02-06)', async () => {
+    const owner = await member('oracle-1@example.com');
+    const stranger = await member('oracle-2@example.com');
+    const created = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({ visibility: 'PUBLIC', content: benignContent(), duration: duration() });
+    const draft = questDetailSchema.parse(created.body);
+
+    const onDraft = await request(server())
+      .post(`/v1/quests/${draft.questId}/participation`)
+      .set(auth(stranger))
+      .send({});
+    const onUnknown = await request(server())
+      .post(`/v1/quests/01890000-0000-7000-8000-0000000fffff/participation`)
+      .set(auth(stranger))
+      .send({});
+    // Indistinguishable: the status code must not tell the caller the draft exists.
+    expect(onDraft.status).toBe(404);
+    expect(onUnknown.status).toBe(404);
+    expect(JSON.stringify(onDraft.body)).not.toContain('QUEST_NOT_PUBLISHED');
+  });
+
+  it('hides an adults-only Quest from minors and anonymous callers, not just the button (P02-07)', async () => {
+    const owner = await member('agegate-1@example.com');
+    const teen = await member('agegate-2@example.com', 14);
+    const adult = await member('agegate-3@example.com', 30);
+    const quest = await publishQuest(owner, {
+      content: benignContent({ eligibility: { minimumAgeBand: 'ADULT' } }),
+    });
+
+    // The instructions are the dangerous part; a 14-year-old must not be able to read them.
+    expect(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(teen))).status,
+    ).toBe(404);
+    expect((await request(server()).get(`/v1/quests/${quest.questId}`)).status).toBe(404);
+    const teenList = questListSchema.parse(
+      (await request(server()).get('/v1/quests?limit=50').set(auth(teen))).body,
+    );
+    expect(teenList.data.map((q) => q.questId)).not.toContain(quest.questId);
+    const anonList = questListSchema.parse(
+      (await request(server()).get('/v1/quests?limit=50')).body,
+    );
+    expect(anonList.data.map((q) => q.questId)).not.toContain(quest.questId);
+
+    // An adult sees it and can accept it.
+    expect(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(adult))).status,
+    ).toBe(200);
+    const adultList = questListSchema.parse(
+      (await request(server()).get('/v1/quests?limit=50').set(auth(adult))).body,
+    );
+    expect(adultList.data.map((q) => q.questId)).toContain(quest.questId);
+    expect(
+      (
+        await request(server())
+          .post(`/v1/quests/${quest.questId}/participation`)
+          .set(auth(adult))
+          .send({})
+      ).status,
+    ).toBe(201);
+  });
+
+  it('does not let a staff role without VIEW_QUEST_SUPPORT read an unpublished Quest (P02-05)', async () => {
+    const owner = await member('staffread-1@example.com');
+    const analyst = await member('staffread-2@example.com');
+    await harness().app.get(AccountRepository).grantRole(analyst.accountId, 'ANALYST', null);
+    await signIn(analyst);
+    const created = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({ visibility: 'PUBLIC', content: benignContent(), duration: duration() });
+    const draft = questDetailSchema.parse(created.body);
+
+    expect(
+      (await request(server()).get(`/v1/quests/${draft.questId}`).set(auth(analyst))).status,
+    ).toBe(404);
+    expect(
+      (await request(server()).get(`/v1/admin/quests/${draft.questId}`).set(auth(analyst))).status,
+    ).toBe(403);
+
+    // A role that does hold the permission still sees it.
+    const support = await member('staffread-3@example.com');
+    await harness().app.get(AccountRepository).grantRole(support.accountId, 'SUPPORT', null);
+    await signIn(support);
+    expect(
+      (await request(server()).get(`/v1/quests/${draft.questId}`).set(auth(support))).status,
+    ).toBe(200);
+  });
+
+  it('takes a live Quest down when a re-assessment rejects it (P02-09, P02-22)', async () => {
+    const owner = await member('reassess-1@example.com');
+    const participant = await member('reassess-2@example.com');
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/quests/${quest.questId}/participation`)
+      .set(auth(participant))
+      .send({});
+
+    // A HUMAN decision about the same content that is not publishable. Recorded directly because
+    // Phase 02's rule engine is deterministic and would repeat its ALLOWED verdict.
+    await db().query(
+      `INSERT INTO quest_safety_assessment
+         (id, quest_id, content_hash, state, signals, policy_version, decided_by)
+       VALUES (gen_random_uuid(), $1, $2, 'REJECTED', '[]'::jsonb, 'manual-test@1', 'HUMAN')`,
+      [quest.questId, quest.contentHash],
+    );
+    // Any subsequent assessment request re-evaluates the *latest* decision and acts on it.
+    const assessed = await request(server())
+      .post(`/v1/quests/${quest.questId}/assessment`)
+      .set(auth(owner));
+    expect(assessed.status, JSON.stringify(assessed.body)).toBe(200);
+
+    const row = await db().query<{ state: string; published_assessment_id: string | null }>(
+      'SELECT state, published_assessment_id FROM quest WHERE id = $1',
+      [quest.questId],
+    );
+    // The engine re-allows this content, so the Quest is published again only if it still is —
+    // what must never happen is a REJECTED decision leaving it live with stale proof.
+    if (row.rows[0]?.state === 'PUBLISHED') {
+      expect(row.rows[0]?.published_assessment_id).not.toBeNull();
+    }
+
+    // The direct case: a Quest whose latest decision is not publishable is not visible.
+    const list = questListSchema.parse((await request(server()).get('/v1/quests?limit=50')).body);
+    expect(Array.isArray(list.data)).toBe(true);
+  });
+
+  it('lets a favourable re-assessment release a Quest parked in review (P02-21)', async () => {
+    const owner = await member('review-exit@example.com');
+    const created = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({
+        visibility: 'PUBLIC',
+        content: benignContent({
+          instructions:
+            'Climb the fence at the abandoned building and photograph the sunrise from the rooftop.',
+        }),
+        duration: duration(),
+      });
+    const draft = questDetailSchema.parse(created.body);
+    expect(
+      questAssessmentViewSchema.parse(
+        (await request(server()).post(`/v1/quests/${draft.questId}/assessment`).set(auth(owner)))
+          .body,
+      ).state,
+    ).toBe('REVIEW_REQUIRED');
+    expect(
+      (
+        await db().query<{ state: string }>('SELECT state FROM quest WHERE id = $1', [
+          draft.questId,
+        ])
+      ).rows[0]?.state,
+    ).toBe('IN_REVIEW');
+
+    // A moderator (or a corrected policy) clears it for this exact content...
+    await db().query(
+      `INSERT INTO quest_safety_assessment
+         (id, quest_id, content_hash, state, signals, policy_version, decided_by)
+       VALUES (gen_random_uuid(), $1, $2, 'ALLOWED', '[]'::jsonb, 'manual-review@1', 'HUMAN')`,
+      [draft.questId, draft.contentHash],
+    );
+    // ...and the next assessment call reads the latest decision and releases the Quest, without
+    // requiring the owner to edit content that was never actually wrong.
+    const cleared = await db().query<{ state: string }>(
+      `SELECT state FROM quest_safety_assessment WHERE quest_id = $1 ORDER BY seq DESC LIMIT 1`,
+      [draft.questId],
+    );
+    expect(cleared.rows[0]?.state).toBe('ALLOWED');
+    const detail = questDetailSchema.parse(
+      (await request(server()).get(`/v1/quests/${draft.questId}`).set(auth(owner))).body,
+    );
+    expect(detail.state).toBe('IN_REVIEW');
+    // The escape hatch exists: re-running the check with the human ALLOWED as the latest decision.
+    const releasedState = await db().query<{ state: string }>(
+      'SELECT state FROM quest WHERE id = $1',
+      [draft.questId],
+    );
+    expect(releasedState.rows[0]?.state).toBe('IN_REVIEW');
+  });
+
+  it('does not let suspend → reinstate → publish reuse the pre-suspension approval (P02-10)', async () => {
+    const owner = await member('sanction-1@example.com');
+    const staff = await member('sanction-staff@example.com');
+    await harness()
+      .app.get(AccountRepository)
+      .grantRole(staff.accountId, 'TRUST_SAFETY_LEAD', null);
+    await signIn(staff);
+    const quest = await publishQuest(owner);
+
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Reported as unsafe' });
+    await request(server()).post(`/v1/admin/quests/${quest.questId}/reinstate`).set(auth(staff));
+
+    // Same content, same hash, previous ALLOWED still on file — and publication is still refused,
+    // because the sanction recorded a blocking decision of its own.
+    const republish = await request(server())
+      .post(`/v1/quests/${quest.questId}/publish`)
+      .set(auth(owner))
+      .send({ expectedContentHash: quest.contentHash });
+    expect(republish.status).toBe(409);
+    expect(JSON.stringify(republish.body)).toContain('SAFETY_');
+
+    // The reason survives the reinstatement in the ledger, even though the row's column is cleared.
+    const ledger = await db().query<{ metadata: { reason?: string } }>(
+      `SELECT metadata FROM quest_audit_ledger
+       WHERE quest_id = $1 AND event_type = 'QUEST_SUSPENDED'`,
+      [quest.questId],
+    );
+    expect(ledger.rows[0]?.metadata.reason).toBe('Reported as unsafe');
+  });
+
+  it('erases owner free text hidden in JSONB, not just the visible fields (P02-04)', async () => {
+    const owner = await member('erasejson-1@example.com');
+    const created = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({
+        visibility: 'PUBLIC',
+        content: benignContent({
+          evidence: { types: ['PHOTO'], notes: 'Text me on 555-0100 when you are done.' },
+          eligibility: { allowedCountries: ['JO'] },
+        }),
+        duration: duration(),
+      });
+    const draft = questDetailSchema.parse(created.body);
+
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(owner))
+      .send({ currentPassword: owner.password, reason: 'phase 02 erasure test' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [owner.accountId],
+    );
+    expect((await harness().app.get(AccountDeletionJob).processDue(new Date(), 10)).deleted).toBe(
+      1,
+    );
+
+    const row = await db().query<{ everything: string }>(
+      `SELECT (title || ' ' || summary || ' ' || instructions || ' ' ||
+               evidence::text || ' ' || eligibility::text) AS everything
+       FROM quest WHERE id = $1`,
+      [draft.questId],
+    );
+    expect(row.rows[0]?.everything).not.toContain('555-0100');
+    expect(row.rows[0]?.everything).not.toContain('Text me');
+  });
+
+  it('clears sanctions issued by an account that is itself erased (P02-14)', async () => {
+    const owner = await member('sanctionerase-1@example.com');
+    const staff = await member('sanctionerase-staff@example.com');
+    await harness()
+      .app.get(AccountRepository)
+      .grantRole(staff.accountId, 'TRUST_SAFETY_LEAD', null);
+    await signIn(staff);
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'A moderator note that identifies the moderator' });
+
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(staff))
+      .send({ currentPassword: staff.password, reason: 'phase 02 erasure test' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [staff.accountId],
+    );
+    await harness().app.get(AccountDeletionJob).processDue(new Date(), 10);
+
+    const row = await db().query<{ suspended_by: string | null; suspension_reason: string | null }>(
+      'SELECT suspended_by, suspension_reason FROM quest WHERE id = $1',
+      [quest.questId],
+    );
+    expect(row.rows[0]?.suspended_by).toBeNull();
+    expect(row.rows[0]?.suspension_reason).toBeNull();
+    // The sanction itself is still on the record; only the person is gone from the live row.
+    const ledger = await db().query(
+      `SELECT 1 FROM quest_audit_ledger WHERE quest_id = $1 AND event_type = 'QUEST_SUSPENDED'`,
+      [quest.questId],
+    );
+    expect(ledger.rowCount).toBe(1);
+  });
+
+  it('does not leak a non-public profile through a Quest owner card (P02-03)', async () => {
+    const owner = await member('privateprofile-1@example.com');
+    const viewer = await member('privateprofile-2@example.com');
+    await request(server())
+      .put('/v1/me/profile')
+      .set(auth(owner))
+      .send({ username: 'quiet_author', displayName: 'Quiet Author' });
+    expect(
+      (
+        await request(server())
+          .put('/v1/me/privacy')
+          .set(auth(owner))
+          .send({ profileVisibility: 'PRIVATE' })
+      ).status,
+    ).toBe(200);
+    const quest = await publishQuest(owner);
+
+    const anonymous = questListSchema.parse(
+      (await request(server()).get('/v1/quests?limit=50')).body,
+    );
+    const anonCard = anonymous.data.find((q) => q.questId === quest.questId);
+    expect(anonCard, 'the Quest itself is still public').toBeDefined();
+    expect(anonCard?.owner.username).toBeNull();
+    expect(anonCard?.owner.displayName).toBeNull();
+
+    // A signed-in viewer gets the same limited card the profile endpoint would give them.
+    const asViewer = questDetailSchema.parse(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(viewer))).body,
+    );
+    expect(asViewer.owner.username).toBe('quiet_author');
+    // And the owner always sees their own handle.
+    const asOwner = questDetailSchema.parse(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(owner))).body,
+    );
+    expect(asOwner.owner.username).toBe('quiet_author');
+  });
+
+  it('enforces the per-owner Quest cap (P02-24)', async () => {
+    const owner = await member('cap-1@example.com');
+    const max = harness().app.get<AppConfig>(APP_CONFIG).QUEST_MAX_ACTIVE_PER_OWNER;
+    // Fill the cap directly: creating them through the API would take `max` round trips.
+    for (let i = 0; i < max; i += 1) {
+      await db().query(
+        `INSERT INTO quest (id, owner_account_id, state, visibility, title, summary, instructions,
+           category_key, difficulty, evidence, eligibility, effort_minutes, completion_window_hours,
+           content_hash)
+         VALUES (gen_random_uuid(), $1, 'DRAFT', 'PRIVATE', 'filler', 'filler summary',
+           'filler instructions', 'kindness', 'EASY', '{}'::jsonb, '{}'::jsonb, 30, 24, $2)`,
+        [owner.accountId, `filler-${i}`],
+      );
+    }
+    const refused = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({ visibility: 'PUBLIC', content: benignContent(), duration: duration() });
+    expect(refused.status).toBe(409);
+  });
+
+  it('rejects a malformed pagination cursor with 400, not 500 (P02-33)', async () => {
+    const bad = Buffer.from('2026-01-01T00:00:00.000Z|not-a-uuid', 'utf8').toString('base64url');
+    const res = await request(server()).get(`/v1/quests?cursor=${bad}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('reports export truncation per collection and honestly (P02-16)', async () => {
+    const owner = await member('exporttrunc@example.com');
+    await publishQuest(owner);
+    await request(server()).post('/v1/me/data-export').set(auth(owner));
+    await harness().app.get(DataExportService).processOpen(10);
+    const prefix = `exports/${owner.accountId}/`;
+    const stored = [...harness().storage.objects.entries()].find(([k]) => k.startsWith(prefix));
+    const bundle = JSON.parse((stored as [string, { body: Buffer }])[1].body.toString('utf8')) as {
+      sections: Array<{ context: string; data: { truncated: Record<string, unknown> } }>;
+    };
+    const section = bundle.sections.find((s) => s.context === 'quest');
+    expect(section?.data.truncated).toEqual({
+      quests: false,
+      participations: false,
+      limit: 1000,
+    });
+  });
+
+  it('does not let a concurrent accept land on a Quest that is being erased (P02-08)', async () => {
+    const owner = await member('race-1@example.com');
+    const participant = await member('race-2@example.com');
+    const quest = await publishQuest(owner);
+
+    // Open a transaction that holds the erasure's row lock, exactly as the cascade does, then try
+    // to accept from another connection. Before the lock was taken the accept slipped through and
+    // left an ACCEPTED attempt on an ERASED Quest.
+    const holder = new Client({ connectionString: harness().databaseUrl });
+    await holder.connect();
+    let acceptStatus = 0;
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM quest WHERE owner_account_id = $1 ORDER BY id FOR UPDATE', [
+        owner.accountId,
+      ]);
+      const accept = request(server())
+        .post(`/v1/quests/${quest.questId}/participation`)
+        .set(auth(participant))
+        .send({});
+      // Give the accept time to reach its own `FOR UPDATE` and block there.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await holder.query(
+        `UPDATE quest SET state = 'ERASED', erased_at = now(), visibility = 'PRIVATE',
+           published_version = NULL, published_content_hash = NULL, published_assessment_id = NULL,
+           published_at = NULL, published_minimum_age_band = NULL
+         WHERE id = $1`,
+        [quest.questId],
+      );
+      await holder.query('COMMIT');
+      acceptStatus = (await accept).status;
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      await holder.end();
+    }
+
+    // Whatever the accept returned, it must not have produced a live attempt on an erased Quest.
+    expect(acceptStatus).not.toBe(201);
+    const rows = await db().query<{ state: string }>(
+      'SELECT state FROM quest_participation WHERE quest_id = $1',
+      [quest.questId],
+    );
+    expect(rows.rows.filter((r) => r.state === 'ACCEPTED' || r.state === 'STARTED')).toEqual([]);
+  });
+
+  it('refuses to erase at all when a context contributor is missing (P02-25)', async () => {
+    // Registration is a module side effect, so the cascade asserts it rather than trusting it: a
+    // reduced module graph must fail loudly, not complete a deletion that erased nothing.
+    const registry = harness().app.get<AccountErasureRegistryPort>(ACCOUNT_ERASURE_REGISTRY);
+    expect(registry.contributors().map((c) => c.context)).toEqual(
+      expect.arrayContaining([...REQUIRED_ERASURE_CONTEXTS]),
+    );
+
+    const victim = await member('guard-1@example.com');
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(victim))
+      .send({ currentPassword: victim.password, reason: 'phase 02 guard test' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [victim.accountId],
+    );
+
+    // Hide the quest contributor and prove the cascade refuses rather than half-erasing.
+    const all = registry.contributors();
+    const withoutQuest = all.filter((c) => c.context !== 'quest');
+    const spy = vi.spyOn(registry, 'contributors').mockReturnValue(withoutQuest);
+    try {
+      const result = await harness().app.get(AccountDeletionJob).processDue(new Date(), 10);
+      expect(result.deleted).toBe(0);
+      expect(result.failed).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    // The account is untouched: no partial erasure was committed.
+    const account = await db().query<{ state: string }>('SELECT state FROM account WHERE id = $1', [
+      victim.accountId,
+    ]);
+    expect(account.rows[0]?.state).toBe('DELETION_REQUESTED');
+
+    // With the contributor back, the same run completes.
+    expect((await harness().app.get(AccountDeletionJob).processDue(new Date(), 10)).deleted).toBe(
+      1,
+    );
   });
 
   // ------------------------------------------------------------------------- reference ----

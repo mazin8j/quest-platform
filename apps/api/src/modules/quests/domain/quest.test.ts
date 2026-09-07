@@ -251,6 +251,32 @@ describe('publish gate', () => {
     expect(ownerStricter.minimumAgeBand).toBe('ADULT');
   });
 
+  it('refuses an age restriction the three-band model cannot enforce (audit P02-31)', () => {
+    // The safety contract allows a minimumAge up to 21; the platform's strictest band is "adult".
+    // Publishing anyway would silently enforce 18+ in place of the 21+ the decision demanded.
+    const decision = evaluatePublish(
+      gate({
+        latestAssessment: assessment({
+          state: 'RESTRICTED',
+          restrictions: { minimumAge: 21, blockedCountries: [], allowedCountries: [] },
+        }),
+      }),
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.blockers).toContain('SAFETY_AGE_RESTRICTION_UNSUPPORTED');
+    // 18 is expressible and still publishes.
+    expect(
+      evaluatePublish(
+        gate({
+          latestAssessment: assessment({
+            state: 'RESTRICTED',
+            restrictions: { minimumAge: 18, blockedCountries: [], allowedCountries: [] },
+          }),
+        }),
+      ).allowed,
+    ).toBe(true);
+  });
+
   it('is fail-closed by construction: no input combination publishes without an assessment', () => {
     for (const state of Object.values(QuestState)) {
       const decision = evaluatePublish(gate({ quest: quest({ state }), latestAssessment: null }));

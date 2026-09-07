@@ -37,11 +37,16 @@ export interface ProfileQueryPort {
   }>;
   /**
    * Public owner cards for a set of accounts, keyed by account id. Profiles decides what may be
-   * shown: an inactive, erased or otherwise non-public profile yields nulls rather than data, and
-   * nothing here ever carries an email, a date of birth or a location.
+   * shown — an inactive, erased or non-PUBLIC profile yields nulls rather than data — and nothing
+   * here ever carries an email, a date of birth or a location.
+   *
+   * `viewerAccountId` is who is asking (`null` for an anonymous caller); the same privacy rule the
+   * public profile endpoint applies is applied here, so another context cannot become a way around
+   * it (audit P02-03).
    */
   publicCardsFor(
     accountIds: ReadonlyArray<string>,
+    viewerAccountId?: string | null,
     tx?: Executor,
   ): Promise<Record<string, { username: string | null; displayName: string | null }>>;
   /**

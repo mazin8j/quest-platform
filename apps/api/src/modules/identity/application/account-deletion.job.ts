@@ -8,6 +8,7 @@ import { METRICS, type MetricsPort } from '../../../common/observability/metrics
 import {
   ACCOUNT_ERASURE_REGISTRY,
   type AccountErasureRegistryPort,
+  REQUIRED_ERASURE_CONTEXTS,
 } from '../../../infrastructure/account-erasure';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import { EVENT_PUBLISHER } from '../../../infrastructure/events/events.module';
@@ -86,6 +87,13 @@ export class AccountDeletionJob {
 
   /** Executes the cascade for one account. Returns false when there was nothing to do. */
   async deleteAccount(accountId: string, deletionRequestId: string): Promise<boolean> {
+    // Refuse to erase at all rather than erase partially: a missing contributor means a whole
+    // context's personal data would silently survive a "completed" deletion (audit P02-25).
+    const registered = new Set(this.erasure.contributors().map((c) => c.context));
+    const missing = REQUIRED_ERASURE_CONTEXTS.filter((context) => !registered.has(context));
+    if (missing.length > 0) {
+      throw new Error(`Account erasure contributors are not registered: ${missing.join(', ')}`);
+    }
     const deletedAt = new Date();
     // Object keys are collected inside the transaction and deleted only after it commits, so a
     // rollback never leaves a live account without its objects (audit P01-02/P01-03).
@@ -139,6 +147,23 @@ export class AccountDeletionJob {
     });
     if (!executed) return false;
     for (const key of objectKeys) await this.deleteObject(key, accountId);
+    // Contexts announce their own erasure only now that the cascade has committed.
+    for (const contributor of this.erasure.contributors()) {
+      if (!contributor.afterCommit) continue;
+      try {
+        await contributor.afterCommit(accountId);
+      } catch (error) {
+        // The data is gone; a failed announcement must not undo that or abort the run.
+        this.logger.error(
+          {
+            accountId,
+            context: contributor.context,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          'account erasure announcement failed',
+        );
+      }
+    }
 
     this.metrics.increment('quest.identity.deleted');
     await this.events.publish(

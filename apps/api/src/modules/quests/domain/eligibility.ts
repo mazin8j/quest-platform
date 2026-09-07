@@ -21,13 +21,18 @@ export interface ViewerContext {
   emailVerified: boolean;
   /** ISO 3166-1 alpha-2 of the viewer's profile country, when known. */
   countryCode: string | null;
-  isStaff: boolean;
+  /**
+   * Holds `VIEW_QUEST_SUPPORT` — not merely "has a staff role". An ANALYST or READ_ONLY account
+   * is staff but has no business reading an unpublished Quest, so the support view is gated on
+   * the permission the RBAC matrix actually grants (audit P02-05).
+   */
+  canViewSupport: boolean;
   /** True when either side blocked the other (BlockQueryPort). */
   blocked: boolean;
 }
 
 export const QuestAccess = {
-  /** Full access: the owner, or staff. */
+  /** Full access: the owner, or support staff. */
   OWNER: 'OWNER',
   /** May read the published Quest and (subject to eligibility) accept it. */
   VIEWER: 'VIEWER',
@@ -37,15 +42,41 @@ export const QuestAccess = {
 export type QuestAccess = (typeof QuestAccess)[keyof typeof QuestAccess];
 
 /**
- * Read access. Anything other than OWNER/VIEWER must surface as NOT FOUND: a 403 would confirm
- * that a private or suspended Quest exists, and a blocked user must not be able to probe.
+ * The age band a Quest was published with, which is the only band that governs anything. The
+ * `eligibility` column is editable draft content and may already say something looser.
+ */
+export function publishedAgeBand(quest: QuestRecord): QuestAgeBand | null {
+  return (quest.publishedMinimumAgeBand as QuestAgeBand | null) ?? null;
+}
+
+/**
+ * True when the published band is stricter than the platform minimum, i.e. the Quest is genuinely
+ * age-gated rather than simply carrying the default band every Quest has.
+ */
+function isAgeGated(band: QuestAgeBand | null): boolean {
+  return band !== null && band !== 'TEEN_13_15';
+}
+
+/**
+ * Read access.
+ *
+ * Anything other than OWNER/VIEWER must surface as NOT FOUND: a 403 would confirm that a private
+ * or suspended Quest exists, and a blocked user must not be able to probe.
+ *
+ * Age restriction hides rather than merely blocking acceptance (audit P02-07). A Trust & Safety
+ * decision that a Quest is adults-only has to keep the *instructions* away from a 14-year-old, not
+ * just grey out a button — the instructions are the dangerous part.
  */
 export function questAccessFor(quest: QuestRecord, viewer: ViewerContext): QuestAccess {
   if (viewer.accountId && viewer.accountId === quest.ownerAccountId) return QuestAccess.OWNER;
-  if (viewer.isStaff) return QuestAccess.OWNER;
+  if (viewer.canViewSupport) return QuestAccess.OWNER;
   if (viewer.blocked) return QuestAccess.HIDDEN;
   if (quest.state !== QuestState.PUBLISHED) return QuestAccess.HIDDEN;
   if (quest.visibility === 'PRIVATE') return QuestAccess.HIDDEN;
+  const band = publishedAgeBand(quest);
+  if (band !== null && isAgeGated(band)) {
+    if (!viewer.ageBand || !ageBandSatisfies(viewer.ageBand, band)) return QuestAccess.HIDDEN;
+  }
   return QuestAccess.VIEWER;
 }
 
@@ -64,30 +95,57 @@ export function withinAvailability(quest: QuestRecord, now: Date): boolean {
   return true;
 }
 
+/** Age bands a viewer may be shown, given their own band. Used to filter the discovery query. */
+export function visibleAgeBandsFor(viewerBand: QuestAgeBand | null): QuestAgeBand[] {
+  const all: QuestAgeBand[] = ['TEEN_13_15', 'TEEN_16_17', 'ADULT'];
+  if (!viewerBand) return ['TEEN_13_15'];
+  return all.filter((band) => ageBandSatisfies(viewerBand, band));
+}
+
 export interface AcceptEligibility {
   eligible: boolean;
   /** Machine-readable reasons, safe to show the viewer. */
   reasons: string[];
+  /**
+   * True when the refusal must be reported as NOT FOUND rather than FORBIDDEN: telling a caller
+   * "not eligible: QUEST_NOT_PUBLISHED" for someone else's draft confirms that the draft exists
+   * (audit P02-06). Only refusals about a Quest the caller may legitimately see are explained.
+   */
+  hidden: boolean;
 }
 
 /**
- * Acceptance eligibility. Separate from read access on purpose: a 16-year-old may see that an
- * adults-only Quest exists on their own profile page of a friend, but may never accept it.
+ * Acceptance eligibility.
+ *
+ * Read access is a precondition, not a parallel check: `questAccessFor` decides whether the caller
+ * may know the Quest exists, and only then do the participation-specific rules run. Without that
+ * ordering a PRIVATE or age-gated Quest that a caller cannot read could still be accepted by id
+ * (audit P02-01).
  */
 export function evaluateAcceptEligibility(input: {
   quest: QuestRecord;
+  /** Owner-declared eligibility folded with the published assessment's restrictions. */
   eligibility: QuestEligibility;
   publishedMinimumAgeBand: QuestAgeBand;
   viewer: ViewerContext;
   now: Date;
 }): AcceptEligibility {
-  const reasons: string[] = [];
   const { quest, viewer } = input;
 
+  // Anything the viewer may not even see is refused as "not found", with no reasons attached.
+  const access = questAccessFor(quest, viewer);
+  if (access === QuestAccess.HIDDEN)
+    return { eligible: false, reasons: ['NOT_FOUND'], hidden: true };
+  // Support staff read Quests; they take part as ordinary members or not at all, and a support
+  // permission must never become a way past a participation rule.
+  const staffOnly = access === QuestAccess.OWNER && viewer.accountId !== quest.ownerAccountId;
+
+  const reasons: string[] = [];
   if (!viewer.accountId) reasons.push('AUTHENTICATION_REQUIRED');
   if (viewer.blocked) reasons.push('BLOCKED');
   if (viewer.accountId === quest.ownerAccountId) reasons.push('OWNER_CANNOT_PARTICIPATE');
   if (quest.state !== QuestState.PUBLISHED) reasons.push('QUEST_NOT_PUBLISHED');
+  if (quest.visibility === 'PRIVATE') reasons.push('QUEST_NOT_OPEN');
   if (!withinAvailability(quest, input.now)) reasons.push('OUTSIDE_AVAILABILITY_WINDOW');
   if (input.eligibility.requiresVerifiedEmail && !viewer.emailVerified) {
     reasons.push('EMAIL_NOT_VERIFIED');
@@ -103,7 +161,16 @@ export function evaluateAcceptEligibility(input: {
   if (allowedCountries.length > 0 && (!country || !allowedCountries.includes(country))) {
     reasons.push('COUNTRY_NOT_ALLOWED');
   }
-  return { eligible: reasons.length === 0, reasons };
+  // A country restriction the viewer cannot be checked against fails closed rather than open.
+  if (blockedCountries.length > 0 && !country) reasons.push('COUNTRY_UNKNOWN');
+
+  return {
+    eligible: reasons.length === 0,
+    reasons,
+    // Staff reading someone else's Quest get the same "not found" as anyone else when they try to
+    // act on it in a state that is not open to them.
+    hidden: staffOnly && reasons.length > 0 && quest.state !== QuestState.PUBLISHED,
+  };
 }
 
 /** Visibility values a Quest may be published with (all of them; PRIVATE simply hides it). */

@@ -144,17 +144,34 @@ export class ProfileService
   }
 
   /**
-   * Owner cards for another context. Profiles owns the rule: an inactive or erased profile shows
-   * nothing, and only the handle and display name ever leave this context.
+   * Owner cards for another context. Profiles owns the rule, and it is the same rule the public
+   * profile endpoint applies: an inactive, erased or non-PUBLIC profile yields nulls rather than
+   * data, and only the handle and display name ever leave this context.
+   *
+   * Privacy is part of that rule, not an afterthought. Without it a Quest listing became a way to
+   * enumerate handles and display names of accounts that had chosen PRIVATE — and of 13-15s, who
+   * can never be PUBLIC at all — to anonymous callers (audit P02-03). A signed-in viewer sees the
+   * limited card the profile endpoint would give them; an anonymous one sees nothing.
    */
   async publicCardsFor(
     accountIds: ReadonlyArray<string>,
+    viewerAccountId?: string | null,
     tx?: Executor,
   ): Promise<Record<string, { username: string | null; displayName: string | null }>> {
     const rows = await this.repo.findManyByAccountIds(accountIds, tx);
+    const privacy = await this.repo.getPrivacyMany(
+      rows.map((r) => r.accountId),
+      tx,
+    );
     const out: Record<string, { username: string | null; displayName: string | null }> = {};
     for (const row of rows) {
-      const visible = row.accountActive && row.erasedAt === null;
+      const isOwner = viewerAccountId !== null && viewerAccountId === row.accountId;
+      // Fail closed on a missing privacy row: absent settings are not permission to publish.
+      const isPublic = privacy.get(row.accountId)?.profileVisibility === 'PUBLIC';
+      const visible =
+        row.accountActive &&
+        row.erasedAt === null &&
+        (isOwner || isPublic || (viewerAccountId !== null && viewerAccountId !== undefined));
       out[row.accountId] = {
         username: visible ? row.username : null,
         displayName: visible ? row.displayName : null,

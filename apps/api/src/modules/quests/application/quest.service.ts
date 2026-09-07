@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   QuestDrafted,
+  QuestErased,
+  QuestParticipationCancelled,
   QuestPublished,
   QuestReinstated,
   QuestRevised,
@@ -42,16 +44,22 @@ import { SAFETY_DECISION } from '../../trust-safety';
 import {
   type AssessmentRecord,
   type QuestRecord,
+  effectiveCountryRules,
   evaluatePublish,
   questContentHash,
   transitionQuest,
 } from '../domain/quest';
-import { ParticipationRepository } from '../infrastructure/participation.repository';
+import {
+  type ParticipationRecord,
+  ParticipationRepository,
+} from '../infrastructure/participation.repository';
 import { QuestRepository } from '../infrastructure/quest.repository';
 
 const SOURCE = 'api.quests';
 const DAY_MS = 86_400_000;
 const SUPPORT_ASSESSMENT_LIMIT = 20;
+/** Recorded on the blocking decision a staff suspension writes. */
+const STAFF_SANCTION_POLICY_VERSION = 'quest-staff-sanction@1';
 
 /**
  * Quest lifecycle: draft → assess → publish → archive, plus the staff sanction path.
@@ -80,6 +88,14 @@ export class QuestService {
 
   async create(principal: Principal, input: CreateQuestRequest): Promise<QuestRecord> {
     await this.assertCategory(input.content.categoryKey);
+    // Abuse control: an account may hold only so many Quests in a non-terminal state. Without
+    // this the only bound is the per-minute throttle, i.e. tens of thousands a day (P02-24).
+    const active = await this.quests.countActiveForOwner(principal.accountId);
+    if (active >= this.config.QUEST_MAX_ACTIVE_PER_OWNER) {
+      throw ApiError.conflict(
+        `You already have ${this.config.QUEST_MAX_ACTIVE_PER_OWNER} Quests. Archive one before creating another.`,
+      );
+    }
     const content = questContentSchema.parse(input.content);
     const duration = questDurationSchema.parse(input.duration);
     const questId = uuidv7();
@@ -139,69 +155,73 @@ export class QuestService {
     const duration = questDurationSchema.parse(input.duration);
     const nextHash = questContentHash(content);
 
-    const { record, unpublished, previousState } = await this.db.transaction(async (tx) => {
-      const current = await this.lockOwned(questId, principal, tx);
-      if (current.revision !== input.expectedRevision) {
-        throw ApiError.conflict('This Quest changed since you loaded it; reload and try again');
-      }
-      if (current.state === QuestState.ARCHIVED || current.state === QuestState.SUSPENDED) {
-        throw ApiError.conflict(`A ${current.state} Quest cannot be edited`);
-      }
-      const safetyRelevantChange = current.contentHash !== nextHash;
-      // REVISE is a no-op transition for a DRAFT and an unpublish for a PUBLISHED Quest.
-      const nextState = safetyRelevantChange
-        ? transitionQuest(current.state, 'REVISE')
-        : current.state;
+    const { record, unpublished, previousState, safetyRelevantChange, cancelled } =
+      await this.db.transaction(async (tx) => {
+        const current = await this.lockOwned(questId, principal, tx);
+        if (current.revision !== input.expectedRevision) {
+          throw ApiError.conflict('This Quest changed since you loaded it; reload and try again');
+        }
+        if (current.state === QuestState.ARCHIVED || current.state === QuestState.SUSPENDED) {
+          throw ApiError.conflict(`A ${current.state} Quest cannot be edited`);
+        }
+        const safetyRelevantChange = current.contentHash !== nextHash;
+        // REVISE is a no-op transition for a DRAFT and an unpublish for a PUBLISHED Quest.
+        const nextState = safetyRelevantChange
+          ? transitionQuest(current.state, 'REVISE')
+          : current.state;
 
-      await this.quests.update(
-        questId,
-        {
-          ...contentColumns(content),
-          ...durationColumns(duration),
-          visibility: input.visibility,
-          contentHash: nextHash,
-          revision: current.revision + 1,
-          state: nextState,
-          ...(safetyRelevantChange
-            ? {
-                // The publication proof is cleared together with the state, so no row can claim a
-                // publication that no longer matches its content.
-                publishedContentHash: null,
-                publishedAssessmentId: null,
-                publishedAt: null,
-                publishedMinimumAgeBand: null,
-              }
-            : {}),
-        },
-        tx,
-      );
-      await this.quests.audit(
-        {
+        await this.quests.update(
           questId,
-          actorId: principal.accountId,
-          eventType: 'QUEST_REVISED',
-          metadata: {
-            safetyRelevantChange,
-            fromState: current.state,
-            toState: nextState,
+          {
+            ...contentColumns(content),
+            ...durationColumns(duration),
+            visibility: input.visibility,
+            contentHash: nextHash,
             revision: current.revision + 1,
+            state: nextState,
+            ...(safetyRelevantChange
+              ? {
+                  // The publication proof is cleared together with the state, so no row can claim a
+                  // publication that no longer matches its content.
+                  publishedContentHash: null,
+                  publishedAssessmentId: null,
+                  publishedAt: null,
+                  publishedMinimumAgeBand: null,
+                }
+              : {}),
           },
-        },
-        tx,
-      );
-      const wasPublished = current.state === QuestState.PUBLISHED;
-      if (wasPublished && safetyRelevantChange) {
-        // Attempts in flight are cancelled: the terms they accepted no longer exist publicly.
-        await this.participations.cancelActiveForQuest(questId, 'QUEST_WITHDRAWN', tx);
-      }
-      const updated = await this.quests.findById(questId, tx);
-      if (!updated) throw ApiError.notFound('Quest');
-      return {
-        record: updated,
-        unpublished: wasPublished && safetyRelevantChange,
-        previousState: current.state,
-      };
-    });
+          tx,
+        );
+        await this.quests.audit(
+          {
+            questId,
+            actorId: principal.accountId,
+            eventType: 'QUEST_REVISED',
+            metadata: {
+              safetyRelevantChange,
+              fromState: current.state,
+              toState: nextState,
+              revision: current.revision + 1,
+            },
+          },
+          tx,
+        );
+        const wasPublished = current.state === QuestState.PUBLISHED;
+        const cancelled =
+          wasPublished && safetyRelevantChange
+            ? // Attempts in flight are cancelled: the terms they accepted no longer exist publicly.
+              await this.withdrawParticipations(questId, tx)
+            : [];
+        const updated = await this.quests.findById(questId, tx);
+        if (!updated) throw ApiError.notFound('Quest');
+        return {
+          record: updated,
+          unpublished: wasPublished && safetyRelevantChange,
+          previousState: current.state,
+          safetyRelevantChange,
+          cancelled,
+        };
+      });
 
     this.metrics.increment('quest.core.revised');
     await this.publishEvent(
@@ -212,7 +232,9 @@ export class QuestService {
           ownerAccountId: principal.accountId,
           revision: record.revision,
           contentHash: record.contentHash,
-          safetyRelevantChange: previousState !== record.state || unpublished,
+          // The real answer, not a proxy for it: a DRAFT edit changes the hash without changing
+          // the state, and a consumer caching a safety verdict must still invalidate it (P02-20).
+          safetyRelevantChange,
           previousState,
           state: record.state,
         },
@@ -232,6 +254,7 @@ export class QuestService {
           this.opts(questId, principal.accountId),
         ),
       );
+      await this.announceCancellations(questId, principal.accountId, cancelled);
     }
     return record;
   }
@@ -262,7 +285,11 @@ export class QuestService {
       correlationId: getRequestContext()?.correlationId,
     });
 
-    const stored = await this.db.transaction(async (tx) => {
+    const {
+      record: stored,
+      withdrawn,
+      cancelled,
+    } = await this.db.transaction(async (tx) => {
       const locked = await this.lockOwned(questId, principal, tx);
       // The content may have changed while the policy engine ran: an assessment must never be
       // attributed to content it did not see.
@@ -274,23 +301,63 @@ export class QuestService {
         { questId, assessment, supersedesAssessmentId: previous?.id ?? null },
         tx,
       );
-      if (assessment.state === 'REVIEW_REQUIRED' && locked.state !== QuestState.IN_REVIEW) {
+
+      // A decision is not advice: an unpublishable outcome about content that is currently live
+      // has to take it down, and a favourable one about content parked in review has to release
+      // it. Reacting to REVIEW_REQUIRED alone left a REJECTED Quest publicly visible (P02-09) and
+      // left IN_REVIEW with no exit (P02-21).
+      const publishable = canPublishWithAssessment(
+        toSharedAssessment(record),
+        locked.contentHash,
+      ).allowed;
+      let cancelledRows: ParticipationRecord[] = [];
+      let withdrawnFrom: QuestState | null = null;
+
+      if (!publishable && locked.state === QuestState.PUBLISHED) {
+        // Full withdrawal, exactly as archive/suspend do it: state, publication proof and the
+        // attempts that were accepted under it (P02-22).
+        withdrawnFrom = locked.state;
+        await this.quests.update(
+          questId,
+          {
+            state: transitionQuest(locked.state, 'REQUIRE_REVIEW'),
+            publishedContentHash: null,
+            publishedAssessmentId: null,
+            publishedAt: null,
+            publishedMinimumAgeBand: null,
+          },
+          tx,
+        );
+        cancelledRows = await this.withdrawParticipations(questId, tx);
+      } else if (!publishable && locked.state === QuestState.DRAFT) {
         await this.quests.update(
           questId,
           { state: transitionQuest(locked.state, 'REQUIRE_REVIEW') },
           tx,
         );
+      } else if (publishable && locked.state === QuestState.IN_REVIEW) {
+        // The Quest may leave review without a content edit: a transient engine failure, or a
+        // policy correction, must not park a Quest forever (P02-21).
+        await this.quests.update(questId, { state: transitionQuest(locked.state, 'REVISE') }, tx);
       }
+      // ARCHIVED and SUSPENDED are left where they are: the decision is still recorded (it is
+      // what a moderator needs), but neither state is publishable, so there is nothing to change.
+
       await this.quests.audit(
         {
           questId,
           actorId: principal.accountId,
           eventType: 'QUEST_ASSESSED',
-          metadata: { safetyState: assessment.state, policyVersion: assessment.policyVersion },
+          metadata: {
+            safetyState: assessment.state,
+            policyVersion: assessment.policyVersion,
+            publishable,
+            fromState: locked.state,
+          },
         },
         tx,
       );
-      return record;
+      return { record, withdrawn: withdrawnFrom, cancelled: cancelledRows };
     });
 
     this.metrics.increment('quest.core.assessed', 1, { state: assessment.state });
@@ -310,6 +377,21 @@ export class QuestService {
         this.opts(questId, principal.accountId),
       ),
     );
+    if (withdrawn) {
+      await this.publishEvent(
+        createEvent(
+          QuestUnpublished,
+          {
+            questId,
+            ownerAccountId: quest.ownerAccountId,
+            reason: 'REVISED',
+            state: QuestState.IN_REVIEW,
+          },
+          this.opts(questId, principal.accountId),
+        ),
+      );
+      await this.announceCancellations(questId, principal.accountId, cancelled);
+    }
     return this.toAssessmentView(stored, quest.contentHash);
   }
 
@@ -420,7 +502,7 @@ export class QuestService {
   }
 
   async archive(principal: Principal, questId: string, reason?: string): Promise<QuestRecord> {
-    const record = await this.db.transaction(async (tx) => {
+    const { updated: record, cancelled } = await this.db.transaction(async (tx) => {
       const quest = await this.lockOwned(questId, principal, tx);
       const next = transitionQuest(quest.state, 'ARCHIVE');
       await this.quests.update(
@@ -435,19 +517,20 @@ export class QuestService {
         },
         tx,
       );
-      await this.participations.cancelActiveForQuest(questId, 'QUEST_WITHDRAWN', tx);
+      const cancelled = await this.withdrawParticipations(questId, tx);
       await this.quests.audit(
         {
           questId,
           actorId: principal.accountId,
           eventType: 'QUEST_ARCHIVED',
-          metadata: { hadReason: reason !== undefined },
+          // The owner's reason is retained in the ledger rather than accepted and discarded.
+          metadata: { reason: reason ?? '', cancelledAttempts: cancelled.length },
         },
         tx,
       );
       const updated = await this.quests.findById(questId, tx);
       if (!updated) throw ApiError.notFound('Quest');
-      return updated;
+      return { updated, cancelled };
     });
     this.metrics.increment('quest.core.archived');
     await this.publishEvent(
@@ -462,6 +545,7 @@ export class QuestService {
         this.opts(questId, principal.accountId),
       ),
     );
+    await this.announceCancellations(questId, principal.accountId, cancelled);
     return record;
   }
 
@@ -472,7 +556,7 @@ export class QuestService {
     questId: string,
     input: SuspendQuestRequest,
   ): Promise<QuestSupportView> {
-    const record = await this.db.transaction(async (tx) => {
+    const { quest: record, cancelled } = await this.db.transaction(async (tx) => {
       const quest = await this.quests.findByIdForUpdate(questId, tx);
       if (!quest || quest.state === QuestState.ERASED) throw ApiError.notFound('Quest');
       const next = transitionQuest(quest.state, 'SUSPEND');
@@ -490,12 +574,42 @@ export class QuestService {
         },
         tx,
       );
-      await this.participations.cancelActiveForQuest(questId, 'QUEST_WITHDRAWN', tx);
-      await this.quests.audit(
-        { questId, actorId: staff.accountId, eventType: 'QUEST_SUSPENDED', metadata: {} },
+      // A human decision about this exact content, recorded in the append-only ledger. Without it
+      // the pre-suspension approval stays the latest one, and suspend → reinstate → publish would
+      // put identical content back in front of users with no new safety decision (P02-10).
+      const previous = await this.quests.latestAssessment(questId, tx);
+      await this.quests.insertAssessment(
+        {
+          questId,
+          assessment: {
+            assessmentId: uuidv7(),
+            subjectType: 'QUEST',
+            subjectId: questId,
+            subjectContentVersion: quest.contentHash,
+            state: 'REVIEW_REQUIRED',
+            signals: [],
+            policyVersion: STAFF_SANCTION_POLICY_VERSION,
+            decidedBy: 'HUMAN',
+            assessedAt: new Date().toISOString(),
+            supersedesAssessmentId: previous?.id,
+          },
+          supersedesAssessmentId: previous?.id ?? null,
+        },
         tx,
       );
-      return quest;
+      const cancelledRows = await this.withdrawParticipations(questId, tx);
+      await this.quests.audit(
+        {
+          questId,
+          actorId: staff.accountId,
+          eventType: 'QUEST_SUSPENDED',
+          // The reason survives reinstatement here; the row's own column is cleared when the
+          // sanction is lifted, so the ledger is the durable record of why (P02-23).
+          metadata: { reason: input.reason, cancelledAttempts: cancelledRows.length },
+        },
+        tx,
+      );
+      return { quest, cancelled: cancelledRows };
     });
     this.metrics.increment('quest.core.suspended');
     await this.publishEvent(
@@ -505,6 +619,21 @@ export class QuestService {
         this.opts(questId, staff.accountId),
       ),
     );
+    // A sanction is an unpublication: consumers that de-index or invalidate must hear about it
+    // through the same event every other withdrawal uses (P02-17).
+    await this.publishEvent(
+      createEvent(
+        QuestUnpublished,
+        {
+          questId,
+          ownerAccountId: record.ownerAccountId,
+          reason: 'SUSPENDED',
+          state: QuestState.SUSPENDED,
+        },
+        this.opts(questId, staff.accountId),
+      ),
+    );
+    await this.announceCancellations(questId, staff.accountId, cancelled);
     return this.supportView(questId);
   }
 
@@ -524,7 +653,12 @@ export class QuestService {
         tx,
       );
       await this.quests.audit(
-        { questId, actorId: staff.accountId, eventType: 'QUEST_REINSTATED', metadata: {} },
+        {
+          questId,
+          actorId: staff.accountId,
+          eventType: 'QUEST_REINSTATED',
+          metadata: { liftedReason: quest.suspensionReason ?? '' },
+        },
         tx,
       );
       return quest;
@@ -649,6 +783,98 @@ export class QuestService {
     };
   }
 
+  /**
+   * Effective eligibility: the owner's declared rules folded with the *published* assessment's
+   * restrictions. Publication proof is what governs a live Quest, so the restrictions come from
+   * the assessment the Quest actually published with, not from whatever was assessed last.
+   */
+  async effectiveEligibilityOf(quest: QuestRecord): Promise<QuestEligibility> {
+    const declared = this.eligibilityOf(quest);
+    if (!quest.publishedAssessmentId) return declared;
+    const assessment = await this.quests.findAssessmentById(quest.publishedAssessmentId);
+    return { ...declared, ...effectiveCountryRules(declared, assessment ?? null) };
+  }
+
+  /**
+   * Cancels every in-flight attempt on a Quest that is leaving visibility, and returns the rows so
+   * the caller can announce them after the transaction commits. Cancelling hundreds of people's
+   * attempts with no event and no ledger entry left participants with no possible notification
+   * and left the ledger claiming nothing happened (P02-18).
+   */
+  private async withdrawParticipations(
+    questId: string,
+    tx: Parameters<typeof this.quests.findByIdForUpdate>[1],
+  ): Promise<ParticipationRecord[]> {
+    const cancelled = await this.participations.cancelActiveForQuest(
+      questId,
+      'QUEST_WITHDRAWN',
+      tx,
+    );
+    for (const row of cancelled) {
+      await this.quests.audit(
+        {
+          questId,
+          actorId: null,
+          eventType: 'PARTICIPATION_CANCELLED',
+          metadata: { participationId: row.id, reason: 'QUEST_WITHDRAWN' },
+        },
+        tx,
+      );
+    }
+    return cancelled;
+  }
+
+  /** Publishes one cancellation event per withdrawn attempt, after the transaction commits. */
+  private async announceCancellations(
+    questId: string,
+    actorId: string,
+    cancelled: ParticipationRecord[],
+  ): Promise<void> {
+    if (cancelled.length === 0) return;
+    this.metrics.increment('quest.participation.cancelled', cancelled.length, {
+      reason: 'QUEST_WITHDRAWN',
+    });
+    for (const row of cancelled) {
+      await this.publishEvent(
+        createEvent(
+          QuestParticipationCancelled,
+          {
+            participationId: row.id,
+            questId,
+            accountId: row.accountId,
+            questVersion: row.questVersion,
+            reason: 'QUEST_WITHDRAWN',
+          },
+          { ...this.opts(questId, actorId), aggregateId: row.id },
+        ),
+      );
+    }
+  }
+
+  /** Announces that a Quest's content was destroyed (owner account erasure). */
+  async announceErasure(quest: QuestRecord, cancelled: ParticipationRecord[]): Promise<void> {
+    await this.publishEvent(
+      createEvent(
+        QuestErased,
+        { questId: quest.id, ownerAccountId: quest.ownerAccountId },
+        { ...this.opts(quest.id, quest.ownerAccountId) },
+      ),
+    );
+    await this.publishEvent(
+      createEvent(
+        QuestUnpublished,
+        {
+          questId: quest.id,
+          ownerAccountId: quest.ownerAccountId,
+          reason: 'ERASED',
+          state: QuestState.ERASED,
+        },
+        this.opts(quest.id, quest.ownerAccountId),
+      ),
+    );
+    await this.announceCancellations(quest.id, quest.ownerAccountId, cancelled);
+  }
+
   private async assertCategory(key: string): Promise<void> {
     if (!(await this.quests.categoryExists(key))) {
       throw ApiError.validation([{ path: 'content.categoryKey', message: 'Unknown category' }]);
@@ -688,6 +914,22 @@ export class QuestService {
     // was rolled back (Phase 01 convention, docs/architecture/06_EVENT_ARCHITECTURE.md).
     await this.events.publish(event);
   }
+}
+
+/** The Trust & Safety contract shape of a stored assessment row. */
+export function toSharedAssessment(record: AssessmentRecord): SafetyAssessment {
+  return {
+    assessmentId: record.id,
+    subjectType: 'QUEST',
+    subjectId: record.questId,
+    subjectContentVersion: record.contentHash,
+    state: record.state,
+    signals: record.signals,
+    restrictions: record.restrictions,
+    policyVersion: record.policyVersion,
+    decidedBy: record.decidedBy,
+    assessedAt: record.assessedAt.toISOString(),
+  };
 }
 
 function contentColumns(content: QuestContent) {

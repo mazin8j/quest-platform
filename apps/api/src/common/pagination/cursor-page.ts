@@ -28,11 +28,14 @@ export function encodeCursor(cursor: PageCursor): string {
   return Buffer.from(`${cursor.at.toISOString()}|${cursor.id}`, 'utf8').toString('base64url');
 }
 
+/** The id half of a cursor reaches SQL as a `::uuid` cast, so it is validated, not just non-empty. */
+const CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function decodeCursor(raw: string | undefined): PageCursor | undefined {
   if (raw === undefined) return undefined;
   const [at, id, ...rest] = Buffer.from(raw, 'base64url').toString('utf8').split('|');
   const parsed = at ? new Date(at) : undefined;
-  if (!parsed || Number.isNaN(parsed.getTime()) || !id || rest.length > 0) {
+  if (!parsed || Number.isNaN(parsed.getTime()) || !id || !CURSOR_ID.test(id) || rest.length > 0) {
     throw ApiError.validation([{ path: 'cursor', message: 'Invalid cursor' }]);
   }
   return { at: parsed, id };
