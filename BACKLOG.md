@@ -149,6 +149,62 @@ with a regression test; what remains here is the P2 set and the debt the phase d
   append-only property is a code convention with no trigger or `REVOKE` behind it — the same gap as
   TD-34 for the consent ledger, and worth solving once for both.
 
+### Phase 02 gate-audit follow-ups (2026-09-08, `docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`)
+
+Residual items from the gate audit. Its 2 P0 and 5 P1 findings were repaired on the branch with
+regression tests proven to fail before each repair; these are the P2/P3 remainder plus the one P1
+deliberately deferred.
+
+- TD-48 **P02-41 (P1, deferred — gate condition A2).** Suspending or deactivating an account leaves
+  every Quest it already published fully live: account state is checked when publishing but by no
+  read path, and `AccountSuspended` has no consumer. Staff must then suspend each Quest by id, and
+  there is no list-by-owner endpoint to find them. Needs an ADR choosing between an event consumer,
+  a denormalised `owner_active` column, and a port call per read — each with different consistency
+  and performance consequences. Required before public sign-up.
+- TD-49 **P02-43 (gate condition A5).** `effectiveCountryRules` fails _open_ on disjoint
+  allow-lists: declared `['FR']` ∩ assessment `['DE']` = `[]`, and an empty allow-list means "no
+  restriction", so the Quest becomes acceptable worldwide. Latent only because the Phase 02 engine
+  always emits empty country arrays; must be closed before any HUMAN or AI decider can set country
+  restrictions, i.e. before Phase 06.
+- TD-50 **P02-44.** A newer, still-publishable decision that _tightens_ a live Quest (e.g.
+  `RESTRICTED` with `minimumAge: 18`) is recorded but never applied — `assess()` handles the
+  not-publishable and publishable-in-review cases and lets publishable-and-PUBLISHED fall through,
+  leaving `published_minimum_age_band` stale while the safety badge shows the new decision.
+- TD-51 **P02-42.** `accept()` evaluates block, country, age band and availability against an
+  unlocked read; the locked re-read checks only state and version. A client omitting the optional
+  `expectedPublishedVersion` while racing a republish is bound to a version its eligibility was
+  never evaluated against.
+- TD-52 **P02-45.** The auth guard returns on `@Public` _before_ the account-state check, so a
+  deactivated or deletion-requested staff principal keeps `canViewSupport` on `GET /v1/quests/:id`.
+  The lifecycle comment claiming "everything else is blocked by the lifecycle guard" is false for
+  every `@Public` route — a Phase 01 seam surfaced by Phase 02.
+- TD-53 **P02-46, P02-51.** Two erasure statements remain unbounded (`deleteForAccount`,
+  `clearSanctionsBy`) beside the batching that exists precisely to avoid that; and an account large
+  enough to exhaust `ERASURE_MAX_BATCHES` now fails loudly but still cannot be deleted without
+  operator intervention. Both want the same fix: drain them in batches too, across cascade runs.
+- TD-54 **P02-47.** The export omits the account's own safety assessments, version snapshots and
+  ledger entries, and several columns of its own Quest rows; `truncated` also false-positives at
+  exactly 1000 rows because the bound is tested with `===` rather than a `limit + 1` probe.
+- TD-55 **P02-48.** Idempotency keys are allowed through CORS and sent by the client but read by no
+  server code, while SKILL.md lists idempotency as Required. A retried `POST /v1/quests` duplicates
+  the draft. (Supersedes the narrower TD-42.)
+- TD-56 **P02-49, P02-52, P02-53.** `supportView` does not exclude `ERASED`, so a tombstoned Quest's
+  owner id and assessment history stay staff-readable after deletion; `contentOf()` drops
+  `location.label` when `countryCode` is absent, so a version snapshot omits a field its own hash
+  covers; and a safety-driven withdrawal emits `QuestUnpublished{reason:'REVISED'}`, leaving
+  consumers unable to tell a T&S takedown from an owner edit.
+- TD-57 **P02-54, P02-55.** Test-quality debt: `lifecycle.test.ts` passes against an empty
+  transition table, `quest.test.ts`'s exhaustiveness claim varies only one axis, a `content.test.ts`
+  assertion is unfalsifiable by construction, and two integration assertions run against 404 bodies.
+  The mobile copy tables miss three codes the server emits (`SAFETY_AGE_RESTRICTION_UNSUPPORTED`,
+  `QUEST_NOT_OPEN`, `COUNTRY_UNKNOWN`) and the test iterates a hardcoded list rather than the
+  server's vocabulary, so it cannot detect the gap.
+- TD-58 **P02-50, P02-56, P02-57.** "Optional location constraints" (SKILL.md scope) is half
+  implemented — the Quest's location is stored, hashed and assessed but constrains nothing, since
+  acceptance is gated on the viewer's country against the owner's lists. Discovery pagination can
+  still end early after `MAX_DISCOVERY_PASSES`. And the Phase 02 execution report's test and
+  operation counts (275, 67) do not match the reproducible figures (283, 68).
+
 ### Should fix
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
