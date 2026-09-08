@@ -268,16 +268,29 @@ export class QuestService {
    */
   async assess(principal: Principal, questId: string): Promise<QuestAssessmentView> {
     const quest = await this.requireOwned(questId, principal);
+    // A suspended Quest is under a staff decision, and an archived one is retired. Re-assessing
+    // either let the owner write a fresh ALLOWED row that became the latest decision by `seq`,
+    // burying the REVIEW_REQUIRED the sanction recorded — after which reinstate → publish put the
+    // content straight back (audit P02-37, defeating the P02-10 repair).
+    if (quest.state === QuestState.SUSPENDED || quest.state === QuestState.ARCHIVED) {
+      throw ApiError.conflict(`A ${quest.state} Quest cannot be re-assessed`);
+    }
     const content = this.contentOf(quest);
     const assessment: SafetyAssessment = await this.safety.assess({
       subjectType: 'QUEST',
       subjectId: quest.id,
       subjectContentVersion: quest.contentHash,
+      // Every free-text field that is part of the content hash and is shown to participants.
+      // `evidence.notes` and `location.label` were hashed and rendered but never assessed, so an
+      // owner could move the dangerous sentence into the evidence note and be re-approved on
+      // byte-identical instructions (audit P02-38).
       text: {
         title: quest.title,
         summary: quest.summary,
         instructions: quest.instructions,
         safetyNotes: quest.safetyNotes ?? '',
+        evidenceNotes: content.evidence.notes ?? '',
+        locationLabel: quest.locationLabel ?? '',
       },
       // Whether minors may take part, derived from the Quest's own eligibility — never identity.
       audienceIncludesMinors: content.eligibility.minimumAgeBand !== 'ADULT',

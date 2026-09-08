@@ -1274,11 +1274,17 @@ describe.skipIf(!enabled)('quest core (real database)', () => {
     expect(anonCard?.owner.username).toBeNull();
     expect(anonCard?.owner.displayName).toBeNull();
 
-    // A signed-in viewer gets the same limited card the profile endpoint would give them.
+    // A signed-in viewer gets nothing either: admitting every authenticated caller made the
+    // Quest list a way to enumerate handles of PRIVATE profiles and of 13-15s (audit P02-39).
     const asViewer = questDetailSchema.parse(
       (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(viewer))).body,
     );
-    expect(asViewer.owner.username).toBe('quiet_author');
+    expect(asViewer.owner.username).toBeNull();
+    expect(asViewer.owner.displayName).toBeNull();
+    const viewerList = questListSchema.parse(
+      (await request(server()).get('/v1/quests?limit=50').set(auth(viewer))).body,
+    );
+    expect(viewerList.data.find((q) => q.questId === quest.questId)?.owner.username).toBeNull();
     // And the owner always sees their own handle.
     const asOwner = questDetailSchema.parse(
       (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(owner))).body,
@@ -1415,6 +1421,198 @@ describe.skipIf(!enabled)('quest core (real database)', () => {
     expect((await harness().app.get(AccountDeletionJob).processDue(new Date(), 10)).deleted).toBe(
       1,
     );
+  });
+
+  // -------------------------------------------- gate-audit repairs (Phase 02 gate, 2026-09-08) ----
+
+  it('erases every Quest across batch boundaries, never a silent partial (P02-34)', async () => {
+    const owner = await member('bigerase@example.com');
+    // Two full batches plus a remainder: ERASURE_BATCH is 200, so 250 rows exercises the loop
+    // rather than the single-pass happy path the earlier tests covered.
+    await db().query(
+      `INSERT INTO quest (id, owner_account_id, state, visibility, title, summary, instructions,
+         category_key, difficulty, evidence, eligibility, effort_minutes, completion_window_hours,
+         content_hash)
+       SELECT gen_random_uuid(), $1, 'ARCHIVED', 'PRIVATE', 'bulk', 'bulk summary',
+         'bulk instructions with a phone number 555-0100', 'kindness', 'EASY',
+         '{"types":["PHOTO"],"notes":"call me on 555-0100"}'::jsonb, '{}'::jsonb, 30, 24,
+         'bulk-' || g
+       FROM generate_series(1, 250) AS g`,
+      [owner.accountId],
+    );
+    const before = await db().query<{ n: string }>(
+      "SELECT count(*) AS n FROM quest WHERE owner_account_id = $1 AND state <> 'ERASED'",
+      [owner.accountId],
+    );
+    expect(Number(before.rows[0]?.n)).toBe(250);
+
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(owner))
+      .send({ currentPassword: owner.password, reason: 'phase 02 gate audit' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [owner.accountId],
+    );
+    expect((await harness().app.get(AccountDeletionJob).processDue(new Date(), 10)).deleted).toBe(
+      1,
+    );
+
+    const survivors = await db().query<{ n: string }>(
+      "SELECT count(*) AS n FROM quest WHERE owner_account_id = $1 AND state <> 'ERASED'",
+      [owner.accountId],
+    );
+    expect(survivors.rows[0]?.n).toBe('0');
+    const leaked = await db().query<{ n: string }>(
+      `SELECT count(*) AS n FROM quest
+       WHERE owner_account_id = $1 AND (instructions LIKE '%555-0100%' OR evidence::text LIKE '%555-0100%')`,
+      [owner.accountId],
+    );
+    expect(leaked.rows[0]?.n).toBe('0');
+  });
+
+  it('redacts owner and staff free text from the audit ledger on erasure (P02-35)', async () => {
+    const owner = await member('ledgererase@example.com');
+    const staff = await member('ledgererase-staff@example.com');
+    await harness()
+      .app.get(AccountRepository)
+      .grantRole(staff.accountId, 'TRUST_SAFETY_LEAD', null);
+    await signIn(staff);
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Owner solicited a meeting at 12 Elm Street' });
+    await request(server()).post(`/v1/admin/quests/${quest.questId}/reinstate`).set(auth(staff));
+    const archived = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({ visibility: 'PUBLIC', content: benignContent(), duration: duration() });
+    await request(server())
+      .post(`/v1/quests/${questDetailSchema.parse(archived.body).questId}/archive`)
+      .set(auth(owner))
+      .send({ reason: 'my phone is 555-0100, message me instead' });
+
+    // Both strings are in the ledger before erasure — the migration claims they never are.
+    const before = await db().query<{ blob: string }>(
+      `SELECT string_agg(metadata::text, ' ') AS blob FROM quest_audit_ledger
+       WHERE quest_id IN (SELECT id FROM quest WHERE owner_account_id = $1)`,
+      [owner.accountId],
+    );
+    expect(before.rows[0]?.blob).toContain('Elm Street');
+    expect(before.rows[0]?.blob).toContain('555-0100');
+
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(owner))
+      .send({ currentPassword: owner.password, reason: 'phase 02 gate audit' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [owner.accountId],
+    );
+    await harness().app.get(AccountDeletionJob).processDue(new Date(), 10);
+
+    const after = await db().query<{ blob: string | null }>(
+      `SELECT string_agg(metadata::text, ' ') AS blob FROM quest_audit_ledger
+       WHERE quest_id IN (SELECT id FROM quest WHERE owner_account_id = $1)`,
+      [owner.accountId],
+    );
+    expect(after.rows[0]?.blob ?? '').not.toContain('Elm Street');
+    expect(after.rows[0]?.blob ?? '').not.toContain('555-0100');
+    // The record that something happened survives; only the prose is gone.
+    const kinds = await db().query<{ event_type: string }>(
+      `SELECT DISTINCT event_type FROM quest_audit_ledger
+       WHERE quest_id IN (SELECT id FROM quest WHERE owner_account_id = $1)`,
+      [owner.accountId],
+    );
+    expect(kinds.rows.map((r) => r.event_type)).toContain('QUEST_SUSPENDED');
+  });
+
+  it('clears a sanction recorded against the erased owner own Quest (P02-36)', async () => {
+    const owner = await member('ownsanction@example.com');
+    const staff = await member('ownsanction-staff@example.com');
+    await harness()
+      .app.get(AccountRepository)
+      .grantRole(staff.accountId, 'TRUST_SAFETY_LEAD', null);
+    await signIn(staff);
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Describes this owner conduct in detail' });
+
+    await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(owner))
+      .send({ currentPassword: owner.password, reason: 'phase 02 gate audit' });
+    await db().query(
+      `UPDATE account_deletion_request SET scheduled_for = now() - interval '1 day' WHERE account_id = $1`,
+      [owner.accountId],
+    );
+    await harness().app.get(AccountDeletionJob).processDue(new Date(), 10);
+
+    const row = await db().query<{ suspension_reason: string | null; suspended_by: string | null }>(
+      'SELECT suspension_reason, suspended_by FROM quest WHERE id = $1',
+      [quest.questId],
+    );
+    expect(row.rows[0]?.suspension_reason).toBeNull();
+    expect(row.rows[0]?.suspended_by).toBeNull();
+  });
+
+  it('refuses to re-assess a suspended Quest, so a sanction cannot be buried (P02-37)', async () => {
+    const owner = await member('bury@example.com');
+    const staff = await member('bury-staff@example.com');
+    await harness()
+      .app.get(AccountRepository)
+      .grantRole(staff.accountId, 'TRUST_SAFETY_LEAD', null);
+    await signIn(staff);
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Reported as unsafe' });
+
+    const reassess = await request(server())
+      .post(`/v1/quests/${quest.questId}/assessment`)
+      .set(auth(owner));
+    expect(reassess.status).toBe(409);
+
+    // The staff decision is still the latest, so reinstate then publish is still refused.
+    await request(server()).post(`/v1/admin/quests/${quest.questId}/reinstate`).set(auth(staff));
+    const republish = await request(server())
+      .post(`/v1/quests/${quest.questId}/publish`)
+      .set(auth(owner))
+      .send({ expectedContentHash: quest.contentHash });
+    expect(republish.status).toBe(409);
+  });
+
+  it('assesses the evidence note and location label, not just the instructions (P02-38)', async () => {
+    const owner = await member('evidencenote@example.com');
+    const created = await request(server())
+      .post('/v1/quests')
+      .set(auth(owner))
+      .send({
+        visibility: 'PUBLIC',
+        content: benignContent({
+          evidence: {
+            types: ['PHOTO'],
+            notes: 'Then climb the fence at the abandoned building and photograph the rooftop.',
+          },
+        }),
+        duration: duration(),
+      });
+    const draft = questDetailSchema.parse(created.body);
+    const assessment = questAssessmentViewSchema.parse(
+      (await request(server()).post(`/v1/quests/${draft.questId}/assessment`).set(auth(owner)))
+        .body,
+    );
+    // Benign title/summary/instructions; the danger is only in the evidence note.
+    expect(assessment.state).toBe('REVIEW_REQUIRED');
+    const refused = await request(server())
+      .post(`/v1/quests/${draft.questId}/publish`)
+      .set(auth(owner))
+      .send({ expectedContentHash: draft.contentHash });
+    expect(refused.status).toBe(409);
   });
 
   // ------------------------------------------------------------------------- reference ----

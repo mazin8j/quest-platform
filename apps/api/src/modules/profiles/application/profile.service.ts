@@ -168,10 +168,10 @@ export class ProfileService
       const isOwner = viewerAccountId !== null && viewerAccountId === row.accountId;
       // Fail closed on a missing privacy row: absent settings are not permission to publish.
       const isPublic = privacy.get(row.accountId)?.profileVisibility === 'PUBLIC';
-      const visible =
-        row.accountActive &&
-        row.erasedAt === null &&
-        (isOwner || isPublic || (viewerAccountId !== null && viewerAccountId !== undefined));
+      // Only the owner, or a genuinely PUBLIC profile. Admitting every signed-in caller made
+      // `isPublic` dead and turned the Quest list into a way to enumerate the handles and display
+      // names of PRIVATE profiles — and of 13-15s, who can never be PUBLIC (audit P02-39).
+      const visible = row.accountActive && row.erasedAt === null && (isOwner || isPublic);
       out[row.accountId] = {
         username: visible ? row.username : null,
         displayName: visible ? row.displayName : null,

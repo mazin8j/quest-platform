@@ -2,10 +2,12 @@
 
 ## Current Phase
 
-Phase 02 — Quest Core (branch `phase-02-quest-core`, 2026-09-07 — **implemented, awaiting the
-independent gate audit**). Not merged into `main`. Phase 03 is not authorized; only a new
-independent audit can authorize it. The audit prompt is
-`docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md`.
+Phase 02 — Quest Core (branch `phase-02-quest-core`, 2026-09-08 — **gate audit run by the
+implementing session: PASS WITH CONDITIONS, 79/100**,
+`docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`). Not merged into `main`. Phase 03 is
+**not** authorized: condition A1 requires an independent re-audit by a session with no
+implementation history, because the audit that produced that verdict was not independent. The
+prompt is `docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md`.
 
 ## Status
 
@@ -59,10 +61,36 @@ Participation ends at `COMPLETION_REQUESTED`.
 | `pnpm audit --audit-level=high` / secret scan                        | PASS — same posture as Phase 01 (TD-17 exception); no secrets |
 | Expo export, CI across the six mandatory jobs                        | **Not yet run** — required before the gate closes             |
 
+### Gate audit 2026-09-08 (implementer-conducted — see condition A1)
+
+Found **2 P0 and 5 P1** still live after the implementation review claimed all P0/P1 were repaired.
+Three of them (P02-35, P02-36, P02-39) were introduced or left half-finished _by_ that round of
+repairs — the signature of a review that verified its fixes existed rather than that they were
+complete.
+
+- **P02-34 (P0)** — erasure silently stopped after 5,000 Quests and reported success; reproduced
+  with 240 Quests surviving a "completed" deletion. Now fails loudly and rolls back.
+- **P02-35 (P0)** — owner and staff free text survived erasure in `quest_audit_ledger.metadata`,
+  introduced by the P02-23 repair. Now redacted in both directions.
+- **P02-36 (P1)** — a sanction against the erased owner's own Quest was never cleared.
+- **P02-37 (P1)** — an owner could bury a staff sanction by re-assessing a suspended Quest,
+  defeating the P02-10 repair.
+- **P02-38 (P1)** — `evidence.notes` and `location.label` were hashed and shown to participants but
+  never assessed.
+- **P02-39 (P1)** — Quest owner cards leaked non-PUBLIC profiles, including 13-15s, to any
+  signed-in caller; introduced by the P02-03 repair.
+- **P02-40 (P1)** — the schema-parity test matched the constraint name inside the file's own header
+  comment, so it passed with the publication gate's CHECK deleted from the mirror.
+
+All repaired with regression tests, each proven to fail before its repair. **P02-41** (a suspended
+owner's published Quests stay live) is accepted and deliberately not repaired: it needs a
+cross-context ADR, and is condition A2. Residual P2/P3 are P02-42…P02-57.
+
 ### Remaining P0 / P1 blockers
 
-None on the branch. Phase 01's open conditions carry forward (CI observed green, developer-machine
-reproduction, mail transport before public sign-up, legal sign-off on the minimum age).
+None on the branch. Open conditions: **A1 independent re-audit** (binding, blocks Phase 03), A2
+suspended-owner ADR, A3 CI green, A4 developer-machine reproduction, A5 country allow-list before
+Phase 06, A6 Phase 01's carried conditions.
 
 ## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
 

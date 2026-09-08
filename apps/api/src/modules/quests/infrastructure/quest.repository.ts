@@ -413,6 +413,36 @@ export class QuestRepository {
     return rows.length;
   }
 
+  /**
+   * Redacts the free-text keys of every ledger entry about this owner's Quests. The ledger keeps
+   * what happened — event type, ids, counts — and loses the prose, which is the only part that is
+   * personal data (audit P02-35). `jsonb - text[]` removes the keys outright.
+   */
+  async redactAuditMetadataForOwner(ownerAccountId: string, tx: Executor): Promise<number> {
+    const rows = await tx
+      .update(questAuditLedger)
+      .set({
+        metadata: sql`${questAuditLedger.metadata} - '{reason,liftedReason}'::text[]`,
+      })
+      .where(
+        sql`${questAuditLedger.questId} IN (SELECT id FROM quest WHERE owner_account_id = ${ownerAccountId})`,
+      )
+      .returning({ id: questAuditLedger.id });
+    return rows.length;
+  }
+
+  /** The mirror: entries this account authored as staff, on anyone's Quest. */
+  async redactAuditMetadataForActor(actorAccountId: string, tx: Executor): Promise<number> {
+    const rows = await tx
+      .update(questAuditLedger)
+      .set({
+        metadata: sql`${questAuditLedger.metadata} - '{reason,liftedReason}'::text[]`,
+      })
+      .where(eq(questAuditLedger.actorId, actorAccountId))
+      .returning({ id: questAuditLedger.id });
+    return rows.length;
+  }
+
   // ---- audit ----
 
   async audit(

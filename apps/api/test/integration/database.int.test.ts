@@ -155,22 +155,36 @@ describe.skipIf(!enabled)('database migrations against a real PostgreSQL', () =>
 
     // Every constraint and index the Quest migration creates must be described by the mirror, so
     // a regenerated snapshot cannot drop it.
-    const source = readFileSync(
+    //
+    // Matched against the mirror's CODE, not its raw text. Substring-matching the whole file let
+    // the check pass on a name that appears only in the file's own header comment: deleting the
+    // `check('quest_published_requires_assessment', ...)` call left the docblock mention behind
+    // and the test still passed, so the one object it exists to protect was unprotected
+    // (audit P02-40). Comments are stripped and the name must appear as a `check('name'` /
+    // `index('name'` / `uniqueIndex('name'` declaration.
+    const rawSource = readFileSync(
       path.join(__dirname, '../../src/infrastructure/database/schema/quests.ts'),
       'utf8',
     );
+    const source = rawSource
+      .replace(/\/\*[\s\S]*?\*\//g, '') // block comments, including the file header
+      .replace(/\/\/.*$/gm, ''); // line comments
+    const declares = (kind: string, name: string): boolean =>
+      new RegExp(`${kind}\\(\\s*'${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`).test(source);
+
     const constraints = await client?.query<{ conname: string }>(
       `SELECT conname FROM pg_constraint c
        JOIN pg_class t ON t.oid = c.conrelid
        WHERE t.relname LIKE 'quest%' AND c.contype = 'c'
        ORDER BY conname`,
     );
-    // Guard against a vacuous pass: the migration creates 13 CHECKs and 10 indexes.
-    expect(constraints?.rows.length ?? 0).toBeGreaterThanOrEqual(13);
+    // Guard against a vacuous pass: the migration creates exactly 14 CHECKs and 13 indexes.
+    expect(constraints?.rows.length ?? 0).toBe(14);
     for (const row of constraints?.rows ?? []) {
-      expect(source, `CHECK ${row.conname} is missing from the schema mirror`).toContain(
-        row.conname,
-      );
+      expect(
+        declares('check', row.conname),
+        `CHECK ${row.conname} is not declared in the schema mirror`,
+      ).toBe(true);
     }
     const indexes = await client?.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
@@ -178,11 +192,12 @@ describe.skipIf(!enabled)('database migrations against a real PostgreSQL', () =>
          AND indexname NOT LIKE '%_pkey' AND tablename <> 'quest_migrations'
        ORDER BY indexname`,
     );
-    expect(indexes?.rows.length ?? 0).toBeGreaterThanOrEqual(10);
+    expect(indexes?.rows.length ?? 0).toBe(13);
     for (const row of indexes?.rows ?? []) {
-      expect(source, `index ${row.indexname} is missing from the schema mirror`).toContain(
-        row.indexname,
-      );
+      expect(
+        declares('index', row.indexname) || declares('uniqueIndex', row.indexname),
+        `index ${row.indexname} is not declared in the schema mirror`,
+      ).toBe(true);
     }
 
     // The one object the mirror cannot express (a circular table-level foreign key) is asserted

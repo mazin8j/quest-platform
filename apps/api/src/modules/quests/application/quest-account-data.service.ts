@@ -28,8 +28,18 @@ const EXPORT_MAX_ROWS = 1000;
  * identically. Draining in bounded, row-locked batches keeps each statement small.
  */
 const ERASURE_BATCH = 200;
-/** Hard stop per cascade run; the deletion job re-runs and finishes the remainder next pass. */
-const ERASURE_MAX_BATCHES = 25;
+/**
+ * Safety stop on the batch loop. There is NO second pass: `AccountDeletionJob` claims the deletion
+ * request and sets the account to DELETED in the same transaction, so a re-run finds the account
+ * already DELETED and does nothing. Exhausting this bound therefore used to mean "erase the first
+ * 5,000 Quests, report success, and keep the rest of the person's content forever" — an unmet
+ * Article 17 obligation reported as a completed deletion (audit P02-34).
+ *
+ * The bound is kept (an unbounded transaction is its own failure mode, audit P02-13) but
+ * exhausting it now throws, which rolls the whole cascade back and leaves the request PENDING for
+ * a later run rather than silently finishing a job it did not do.
+ */
+const ERASURE_MAX_BATCHES = 250;
 
 /** Tombstone text left in an erased Quest row. Deliberately not user content. */
 const ERASED_TEXT = '[erased]';
@@ -155,9 +165,13 @@ export class QuestAccountDataService implements OnModuleInit {
 
     const erasedAt = new Date();
     const withdrawn: Array<{ quest: QuestRecord; cancelled: ParticipationRecord[] }> = [];
+    let drained = false;
     for (let batch = 0; batch < ERASURE_MAX_BATCHES; batch += 1) {
       const owned = await this.quests.listByOwnerForErasure(accountId, ERASURE_BATCH, tx);
-      if (owned.length === 0) break;
+      if (owned.length === 0) {
+        drained = true;
+        break;
+      }
       for (const quest of owned) {
         // The quest row is already locked by the batch read; cancelling its attempts comes second.
         const cancelled = await this.participations.cancelActiveForQuest(
@@ -186,6 +200,13 @@ export class QuestAccountDataService implements OnModuleInit {
             publishedAssessmentId: null,
             publishedAt: null,
             publishedMinimumAgeBand: null,
+            // A sanction recorded against this owner's own Quest names the staff member who
+            // issued it and carries their free-text reason; owner erasure has to clear it here,
+            // just as `clearSanctionsBy` clears the ones they issued (audit P02-36).
+            suspendedAt: null,
+            suspendedBy: null,
+            suspensionReason: null,
+            archivedAt: null,
             erasedAt,
           },
           tx,
@@ -196,8 +217,27 @@ export class QuestAccountDataService implements OnModuleInit {
         );
         withdrawn.push({ quest, cancelled });
       }
-      if (owned.length < ERASURE_BATCH) break;
+      if (owned.length < ERASURE_BATCH) {
+        drained = true;
+        break;
+      }
     }
+    if (!drained) {
+      // Loud, and the transaction rolls back: better an operator alarm than a deletion that
+      // reports success while retaining the person's content (audit P02-34).
+      this.metrics.increment('quest.core.erasure_incomplete');
+      throw new Error(
+        `Quest erasure for ${accountId} exceeded ${ERASURE_MAX_BATCHES * ERASURE_BATCH} Quests in one cascade; ` +
+          'the deletion was rolled back and remains pending. Raise ERASURE_MAX_BATCHES or drain this account first.',
+      );
+    }
+
+    // The audit ledger keeps the record that a moderation action happened, but its `metadata`
+    // carries owner-authored archive reasons and staff-authored suspension reasons — free text the
+    // migration claims the ledger never holds. Redact it for this account, in both directions
+    // (rows about their Quests, and rows where they are the actor) (audit P02-35).
+    await this.quests.redactAuditMetadataForOwner(accountId, tx);
+    await this.quests.redactAuditMetadataForActor(accountId, tx);
 
     // Announced only after the whole cascade commits — the registry hands these back to the caller
     // through `pendingAnnouncements`, so an event can never describe state that was rolled back.
