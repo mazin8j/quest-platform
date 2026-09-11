@@ -9,6 +9,20 @@ onlyBuiltDependencies:
   - esbuild
   - unrs-resolver
 
+# Transitive dependency pins that upstream has not yet shipped.
+#   multer: @nestjs/platform-express@12.0.1 (the latest release) pins multer to exactly 2.2.0,
+#   which carries three high and one low advisory — GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf,
+#   GHSA-535w-7cp7-47q4 and GHSA-qvfw-j98x-7q72 — all fixed in 2.3.0. There is no
+#   @nestjs/platform-express release that depends on the fixed version, so the only way to take
+#   the patch is to override the pin. 2.2.0 → 2.3.0 is a semver-minor bump within the same major.
+#   QUEST mounts no multer middleware (no FileInterceptor, MulterModule or multipart route
+#   anywhere; apps/api imports only the NestExpressApplication *type*), so this changes no
+#   behaviour today — it removes vulnerable code from the image rather than fixing a live defect.
+#   Remove the override once @nestjs/platform-express ships a release depending on >=2.3.0.
+#   See BACKLOG.md TD-60.
+overrides:
+  multer: '2.3.0'
+
 # Documented risk acceptances for `pnpm audit --audit-level=high` (CI security gate).
 # Re-review on 2026-12-01 or when Expo SDK 58 lands — see BACKLOG.md TD-17.
 #   GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq: image-size <=2.0.2 DoS in ICNS/JXL/HEIF parsers.

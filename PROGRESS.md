@@ -114,16 +114,33 @@ proven to fail by reverting the three enforcement points individually against th
 
 ### Remaining P0 / P1 blockers
 
-None on the branch: **open P0 = 0, open P1 = 0**. Open conditions: **A1 independent re-audit**
+None on the branch: **open P0 = 0, open P1 = 0**, and no mandatory gate command failing. Open
+conditions: **A1 independent re-audit**
 (binding, blocks Phase 03 — unaffected by the remediation, which this same session wrote), A3 CI
 green, A4 developer-machine reproduction, A5 country allow-list before Phase 06, A6 Phase 01's
 carried conditions. A2 is discharged.
 
-New since the audit: **TD-60** — `pnpm audit --audit-level=high` now fails on three `multer@2.2.0`
-advisories reached through `@nestjs/platform-express`. The dependency set is unchanged by this work
-(neither `package.json` nor the lockfile is touched), so this is a newly published advisory, not a
-regression; it is unreachable today (no multipart route exists) but it is a mandatory gate command
-that fails, and is reported as such rather than as a pass.
+### TD-60 — `multer` advisories, raised and closed the same day (2026-09-11, commit `fix(deps)`)
+
+`pnpm audit --audit-level=high` began failing on four advisories against `multer@2.2.0` (three high
+— GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4 — and one low,
+GHSA-qvfw-j98x-7q72), on the single path `apps/api → @nestjs/platform-express@12.0.1 → multer`. The
+lockfile was untouched by the TD-48 work, so this was a newly published advisory set against an
+unchanged tree.
+
+Not reachable: no `FileInterceptor`, `MulterModule`, multipart parser or upload route exists
+anywhere, and `apps/api` imports only the `NestExpressApplication` type. The code loads but the
+parser never runs, because no multer middleware is mounted.
+
+**Repaired rather than risk-accepted.** `12.0.1` is the latest `@nestjs/platform-express` and pins
+multer to exactly `2.2.0`, so a parent upgrade was unavailable and an override was the only route
+to the patch. `2.2.0 → 2.3.0` is semver-minor and QUEST calls none of multer's API, so the
+compatibility surface is empty. `pnpm-workspace.yaml` carries the override with its reasoning
+inline; the lockfile diff is ten lines. `pnpm audit --audit-level=high` exits 0 again, and
+`apps/api/test/dependency-pins.test.ts` fails in the ordinary unit run if the override is ever
+lost — proven by removing it. §8 of the gate-audit report has the detail.
+
+**No mandatory gate command is now failing.**
 
 ## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
 
@@ -355,8 +372,9 @@ microservice; nothing from Phase 02 (no quests, feed, followers, XP, crews, crea
    answer its questions on the auditor's behalf. It must now also cover the TD-48 remediation
    (ADR-014 and §7 of the audit report), which was written by the same session that implemented the
    phase and is therefore no more self-certifiable than the phase was.
-   1b. **TD-60**: close the `multer` high advisories (bump `@nestjs/platform-express` or add a lockfile
-   override) so `pnpm audit --audit-level=high` is green again before the re-audit runs.
+   1b. ~~**TD-60**: close the `multer` high advisories.~~ Done 2026-09-11 (`fix(deps)`); the audit gate
+   is green. Remove the override and its guard test when `@nestjs/platform-express` ships a release
+   depending on multer `>=2.3.0`.
 2. **C2-P02**: `pnpm install --frozen-lockfile && pnpm verify` in `C:\Quest`, plus
    `pnpm --filter @quest/mobile exec expo export --platform android`; record the results here.
 3. **C3-P02**: open a pull request for `phase-02-quest-core` so the CI workflow runs, and confirm

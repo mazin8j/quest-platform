@@ -492,3 +492,84 @@ therefore no more able to certify it than it was able to certify the original im
 is new since the audit and is unresolved.
 
 Phase 03 is **not** authorized by this document. Not merged into `main`.
+
+---
+
+## 8. TD-60 — the `multer` advisories, raised and closed on 2026-09-11
+
+Appended for the same reason as §7: §§0–6 are the historical record and are not edited.
+
+§7 reported `pnpm audit --audit-level=high` as **FAIL** and declined to call it a pass. It has since
+been investigated and repaired in a separate commit (`fix(deps)`), so the gate command now exits 0.
+
+**Correction to §7.** That section said "three high advisories". There are **four** — three high
+and one low, all against `multer@2.2.0`, all fixed in `2.3.0`:
+
+| Advisory | Severity | Vulnerable | Summary |
+| --- | --- | --- | --- |
+| GHSA-wc9g-mqfw-jrwm | high | `<2.3.0` | DoS via crafted multipart field names |
+| GHSA-qfvm-cv95-jqjf | high | `=2.2.0` | DoS via file-descriptor leak on aborted uploads |
+| GHSA-535w-7cp7-47q4 | high | `<2.3.0` | DoS via oversized array index in field names |
+| GHSA-qvfw-j98x-7q72 | low | `<2.3.0` | file-size-limit bypass via an async `fileFilter` race |
+
+**Dependency path** — one, and only one: `apps/api → @nestjs/platform-express@12.0.1 → multer@2.2.0`.
+
+**Reachability: none.** No `FileInterceptor`, `FilesInterceptor`, `FileFieldsInterceptor`,
+`AnyFilesInterceptor`, `MulterModule`, multipart parser or upload route exists anywhere in
+`apps/api`, `apps/web`, `apps/admin` or `packages`; `apps/api/src/bootstrap.ts` imports only the
+`NestExpressApplication` *type*. Importing `@nestjs/platform-express` does load 13 multer modules
+into the require graph, so the code is resident — but every advisory is in the multipart parser,
+which executes only when a multer middleware is mounted on a route, and none is. The Express adapter
+does not mount one either. Phase 05 media is direct-to-object-storage (ADR-005), so nothing planned
+introduces one.
+
+**Repaired, not risk-accepted.** `12.0.1` is the newest `@nestjs/platform-express`; every published
+version, alpha releases included, pins multer to an exact version and none names `2.3.0`. Upgrading
+the parent was therefore not an option and a pnpm override was the only route to the patch.
+`2.2.0 → 2.3.0` is a semver-minor bump within the same major, and because QUEST calls none of
+multer's API the compatibility surface is empty — the override cannot break behaviour that does not
+exist. `pnpm-workspace.yaml` gained `overrides: { multer: '2.3.0' }` with the reasoning inline; the
+lockfile diff is **ten lines** and touches nothing but multer's resolution.
+
+**Validation after the override** (`.turbo` deleted, `--force`):
+
+| Check | Result |
+| --- | --- |
+| `pnpm install --frozen-lockfile` with the updated lockfile | PASS |
+| `pnpm turbo run lint typecheck test build --force` | PASS — 43/43 tasks, **296** unit tests |
+| Integration + E2E vs native PostgreSQL 16 + PostGIS + pgvector + Redis | PASS — 84 tests |
+| `pnpm deps:check` | PASS — 0 violations |
+| OpenAPI regenerate + `git diff --exit-code` | PASS — no drift |
+| Migrations from an empty database, applied twice, then `status` | PASS — 3 applied, 0 pending, idempotent |
+| Expo export (`--platform android`, `EXPO_OFFLINE=1`) | PASS |
+| Secret scan over the changed files; `.env` untracked | PASS |
+| **`pnpm audit --audit-level=high`** | **PASS — exit 0** |
+
+Zero multer advisories remain. The audit's remaining two highs are the pre-existing, documented
+`image-size` acceptances (TD-17), which `auditConfig.ignoreGhsas` already excludes; three moderates
+remain below the gate threshold, all on dev tooling paths (`drizzle-kit → esbuild`,
+`expo → xcode → uuid`, `expo-router → query-string → decode-uri-component`).
+
+**Guarded.** `apps/api/test/dependency-pins.test.ts` asserts the resolved multer is at or above
+`2.3.0` and fails in the ordinary unit run if the override is lost — proven by removing the override,
+re-installing (multer fell back to `2.2.0`) and watching the test fail with its explanatory message.
+The audit gate alone would catch a regression only after it was already in the lockfile, and only
+while the advisory database still carried the entry.
+
+**Disposition: TD-60 is closed, and it does not block the Phase 02 gate.** The override is a
+temporary measure against an upstream pin: remove it, and the guard test with it, once
+`@nestjs/platform-express` depends on a fixed multer itself.
+
+### Gate state after §7 and §8
+
+| | |
+| --- | --- |
+| Open P0 | **0** |
+| Open P1 | **0** |
+| Mandatory gate commands failing | **0** |
+
+Condition **A1 — independent re-audit by a session with no implementation history — remains open**,
+and now covers §7 and §8 as well: both were written by the session that implemented Phase 02, so
+neither is self-certifiable. Conditions A3–A6 are unchanged. A2 is discharged.
+
+Phase 03 is **not** authorized by this document. Not merged into `main`.

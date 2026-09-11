@@ -227,16 +227,36 @@ deliberately deferred.
 
 ### Should fix
 
-- TD-60 **`pnpm audit --audit-level=high` now fails on `multer` (observed 2026-09-11).** Three high
-  advisories (incl. GHSA-535w-7cp7-47q4, DoS via crafted multipart, file-descriptor leak and
-  oversized array) against `multer@2.2.0`, reached only transitively through
-  `@nestjs/platform-express@12.0.1`; patched in `>=2.3.0`. Neither `package.json` nor
-  `pnpm-lock.yaml` changed in the TD-48 remediation, so this is a newly published advisory against
-  an unchanged dependency set, not a regression. Not currently reachable — the API registers no
-  `FileInterceptor` and accepts no multipart upload anywhere (Phase 05 media goes direct to object
-  storage, ADR-005) — but it fails the mandatory gate command and must be closed by a
-  `@nestjs/platform-express` bump or a lockfile override before the next gate, not risk-accepted by
-  default.
+- TD-60 **`multer` high advisories — RESOLVED 2026-09-11** (`fix(deps)`). Observed the same day:
+  `pnpm audit --audit-level=high` began failing on four advisories against `multer@2.2.0` —
+  GHSA-wc9g-mqfw-jrwm (DoS via crafted multipart field names), GHSA-qfvm-cv95-jqjf (DoS via file
+  descriptor leak on aborted uploads) and GHSA-535w-7cp7-47q4 (DoS via oversized array index),
+  all high, plus GHSA-qvfw-j98x-7q72 (low, file-size-limit bypass via an async `fileFilter` race).
+  One dependency path only: `apps/api → @nestjs/platform-express@12.0.1 → multer@2.2.0`. The
+  lockfile was untouched by the TD-48 work, so this was a newly published advisory set against an
+  unchanged dependency tree, not a regression.
+
+  **Not reachable in QUEST**: there is no `FileInterceptor`, `FilesInterceptor`, `MulterModule`,
+  multipart parser or upload route anywhere in the workspace, and `apps/api` imports only the
+  `NestExpressApplication` _type_ from the package. Importing `@nestjs/platform-express` does pull
+  multer's modules into the require graph, but the vulnerable code is in the multipart parser,
+  which runs only when a multer middleware is mounted on a route — and none is. Phase 05 media
+  goes direct to object storage (ADR-005), so nothing planned mounts one either.
+
+  **Repaired rather than risk-accepted.** `@nestjs/platform-express@12.0.1` is the latest release
+  and pins multer to exactly `2.2.0`; no published version depends on the fixed `2.3.0`, so an
+  upgrade of the parent was not available and a pnpm override was the only route to the patch.
+  `2.2.0 → 2.3.0` is a semver-minor bump inside the same major, and since QUEST invokes none of
+  multer's API the compatibility surface is empty. `pnpm-workspace.yaml` now carries
+  `overrides: { multer: '2.3.0' }`; the lockfile diff is ten lines and touches nothing else.
+  `pnpm audit --audit-level=high` exits 0 again, with the two remaining highs being the
+  pre-existing documented image-size acceptances (TD-17).
+
+  Guarded by `apps/api/test/dependency-pins.test.ts`, which fails in the ordinary unit run if the
+  override is ever lost — proven by removing it and re-installing. An audit gate catches this only
+  after the regression is in the lockfile and only while the advisory database still lists it;
+  the test catches it immediately and says why. **Remove the override** — and that test — once
+  `@nestjs/platform-express` ships a release depending on `>=2.3.0` itself.
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
   GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via
