@@ -50,6 +50,7 @@ import {
 } from '../infrastructure/lifecycle.repository';
 import { SessionRepository } from '../infrastructure/session.repository';
 import { MAILER, type MailerPort } from '../ports/mailer.port';
+import { isPublicationEligibleState } from '../ports/owner-eligibility.port';
 import { PASSWORD_HASHER, type PasswordHasherPort } from '../ports/password-hasher.port';
 import { AccountViewService } from './account-view.service';
 import { SessionService } from './session.service';
@@ -331,6 +332,28 @@ export class AccountService {
       state: account.state,
       emailVerified: account.emailVerifiedAt !== null,
     };
+  }
+
+  // ------------------------------------------------------------------ owner eligibility ----
+
+  /**
+   * `OwnerEligibilityPort`. Identity answers the policy question itself rather than handing out a
+   * lifecycle state for another context to interpret (ADR-014).
+   */
+  async isPublicationEligible(accountId: string): Promise<boolean> {
+    const account = await this.accounts.findById(accountId);
+    // A missing account is ineligible rather than an error: the caller is concealing content, and
+    // "I could not establish who owns this" must fail closed like every other unknown.
+    return account ? isPublicationEligibleState(account.state) : false;
+  }
+
+  async publicationEligibilityFor(
+    accountIds: readonly string[],
+  ): Promise<Map<string, boolean>> {
+    const states = await this.accounts.statesByIds(accountIds);
+    const out = new Map<string, boolean>();
+    for (const [id, state] of states) out.set(id, isPublicationEligibleState(state));
+    return out;
   }
 
   // --------------------------------------------------------------------------------- staff ----

@@ -31,6 +31,15 @@ export interface ViewerContext {
   blocked: boolean;
 }
 
+/**
+ * Whether the Quest's OWNER may currently have public content, as the Identity context judges it
+ * (`OwnerEligibilityPort`). Quest Core never interprets a lifecycle state itself.
+ *
+ * `false` is the safe default and the value every caller must use when the answer could not be
+ * established — a lookup that failed is not permission (audit P02-41 / TD-48, ADR-014).
+ */
+export type OwnerEligible = boolean;
+
 export const QuestAccess = {
   /** Full access: the owner, or support staff. */
   OWNER: 'OWNER',
@@ -67,11 +76,20 @@ function isAgeGated(band: QuestAgeBand | null): boolean {
  * decision that a Quest is adults-only has to keep the *instructions* away from a 14-year-old, not
  * just grey out a button — the instructions are the dangerous part.
  */
-export function questAccessFor(quest: QuestRecord, viewer: ViewerContext): QuestAccess {
+export function questAccessFor(
+  quest: QuestRecord,
+  viewer: ViewerContext,
+  ownerEligible: OwnerEligible,
+): QuestAccess {
   if (viewer.accountId && viewer.accountId === quest.ownerAccountId) return QuestAccess.OWNER;
   if (viewer.canViewSupport) return QuestAccess.OWNER;
   if (viewer.blocked) return QuestAccess.HIDDEN;
   if (quest.state !== QuestState.PUBLISHED) return QuestAccess.HIDDEN;
+  // The owner's account lifecycle governs their published content: a suspended, deactivated or
+  // departing author's Quests stop being public with them. Checked after owner/support so that
+  // neither the author nor a moderator loses sight of the Quest, and before everything else so an
+  // ineligible owner's Quest is concealed for the same reason an unpublished one is (P02-41).
+  if (!ownerEligible) return QuestAccess.HIDDEN;
   if (quest.visibility === 'PRIVATE') return QuestAccess.HIDDEN;
   const band = publishedAgeBand(quest);
   if (band !== null && isAgeGated(band)) {
@@ -128,12 +146,14 @@ export function evaluateAcceptEligibility(input: {
   eligibility: QuestEligibility;
   publishedMinimumAgeBand: QuestAgeBand;
   viewer: ViewerContext;
+  /** From `OwnerEligibilityPort`; `false` whenever it could not be established. */
+  ownerEligible: OwnerEligible;
   now: Date;
 }): AcceptEligibility {
   const { quest, viewer } = input;
 
   // Anything the viewer may not even see is refused as "not found", with no reasons attached.
-  const access = questAccessFor(quest, viewer);
+  const access = questAccessFor(quest, viewer, input.ownerEligible);
   if (access === QuestAccess.HIDDEN)
     return { eligible: false, reasons: ['NOT_FOUND'], hidden: true };
   // Support staff read Quests; they take part as ordinary members or not at all, and a support

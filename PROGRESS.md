@@ -4,10 +4,12 @@
 
 Phase 02 — Quest Core (branch `phase-02-quest-core`, 2026-09-08 — **gate audit run by the
 implementing session: PASS WITH CONDITIONS, 79/100**,
-`docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`). Not merged into `main`. Phase 03 is
-**not** authorized: condition A1 requires an independent re-audit by a session with no
-implementation history, because the audit that produced that verdict was not independent. The
-prompt is `docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md`.
+`docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`; its last open P1, P02-41 / TD-48, was
+remediated 2026-09-11 under ADR-014 and recorded in §7 of that report — **open P0: 0, open P1: 0**).
+Not merged into `main`. Phase 03 is **not** authorized: condition A1 requires an independent
+re-audit by a session with no implementation history, because neither the audit that produced that
+verdict nor the remediation that closed its last finding was independent. The prompt is
+`docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md`.
 
 ## Status
 
@@ -83,14 +85,45 @@ complete.
   comment, so it passed with the publication gate's CHECK deleted from the mirror.
 
 All repaired with regression tests, each proven to fail before its repair. **P02-41** (a suspended
-owner's published Quests stay live) is accepted and deliberately not repaired: it needs a
-cross-context ADR, and is condition A2. Residual P2/P3 are P02-42…P02-57.
+owner's published Quests stay live) was accepted and deliberately not repaired at the time: it
+needed a cross-context ADR. Residual P2/P3 are P02-42…P02-57.
+
+### Gate remediation — P02-41 / TD-48 (2026-09-11, commit `audit(P02-41)`)
+
+**Condition A2 is discharged.** The defect was reproduced first: eight integration tests written
+against the unmodified branch, six failing on a real database — a suspended, deactivated or
+deletion-requested owner's published Quests were readable, listed in discovery, and could be started
+and submitted for completion.
+
+**ADR-014** evaluates an event consumer, a denormalised flag, a synchronous port and a hybrid, and
+chooses the **synchronous Identity query port**: without a transactional outbox an event consumer
+fails open on a dropped message, which is the wrong direction for a safety sanction, and a
+denormalised flag turns suspending a prolific author into a write amplification whose
+partially-applied state is a partially-applied sanction. Identity now exports `OWNER_ELIGIBILITY`
+with a batch method; Quest Core asks and never interprets an account state, so it contains no
+lifecycle vocabulary at all and `deps:check` is unchanged at 0 violations.
+
+Behaviour: an ineligible owner's Quest is a **404** everywhere (never a 403, and carrying no account
+state, owner metadata or reason), absent from discovery via one batched lookup per refill pass (no
+N+1, page size and cursor unaffected), and cannot be accepted. `start` and `completion-request`
+return 409 with the same message an unpublished Quest gives, word for word; **`cancel` stays open**,
+so nobody is trapped in an attempt by someone else's suspension. A failed lookup is ineligible and
+increments `quest.core.owner_eligibility_unavailable`. Reactivation restores visibility only where
+the Quest's own ADR-013 proof is still valid. Eleven regression tests (8 integration, 3 unit), each
+proven to fail by reverting the three enforcement points individually against the full suite.
 
 ### Remaining P0 / P1 blockers
 
-None on the branch. Open conditions: **A1 independent re-audit** (binding, blocks Phase 03), A2
-suspended-owner ADR, A3 CI green, A4 developer-machine reproduction, A5 country allow-list before
-Phase 06, A6 Phase 01's carried conditions.
+None on the branch: **open P0 = 0, open P1 = 0**. Open conditions: **A1 independent re-audit**
+(binding, blocks Phase 03 — unaffected by the remediation, which this same session wrote), A3 CI
+green, A4 developer-machine reproduction, A5 country allow-list before Phase 06, A6 Phase 01's
+carried conditions. A2 is discharged.
+
+New since the audit: **TD-60** — `pnpm audit --audit-level=high` now fails on three `multer@2.2.0`
+advisories reached through `@nestjs/platform-express`. The dependency set is unchanged by this work
+(neither `package.json` nor the lockfile is touched), so this is a newly published advisory, not a
+regression; it is unreachable today (no multipart route exists) but it is a mandatory gate command
+that fails, and is reported as such rather than as a pass.
 
 ## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
 
@@ -115,7 +148,9 @@ Phase 06, A6 Phase 01's carried conditions.
   page behind `VIEW_QUEST_SUPPORT` / `SANCTION_QUEST`.
 - **Operations** — `pnpm --filter @quest/api quests:process-expiries` (idempotent; a scheduled
   worker replaces it with the first deployment, TD-21).
-- **Documentation** — ADR-013, `docs/data/QUEST_DATA_MODEL.md`, `docs/api/QUEST_API.md`,
+- **Owner lifecycle** (gate remediation, 2026-09-11) — Identity's `OWNER_ELIGIBILITY` port with
+  batch lookup, and its enforcement in Quest read, discovery and participation (ADR-014).
+- **Documentation** — ADR-013, ADR-014, `docs/data/QUEST_DATA_MODEL.md`, `docs/api/QUEST_API.md`,
   `docs/security/QUEST_THREAT_MODEL.md`, `docs/product/PHASE_02_QUEST_ACCEPTANCE.md`,
   `docs/ux/PHASE_02_MOBILE_QUESTS.md`; `docs/data/IDENTITY_DATA_MODEL.md` corrected where Phase 02
   replaced the event-subscription erasure design with the in-transaction registry.
@@ -317,7 +352,11 @@ microservice; nothing from Phase 02 (no quests, feed, followers, XP, crews, crea
 
 1. **C1-P02**: run the independent Phase 02 gate audit using
    `docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md` in a fresh session. Do not skip it and do not
-   answer its questions on the auditor's behalf.
+   answer its questions on the auditor's behalf. It must now also cover the TD-48 remediation
+   (ADR-014 and §7 of the audit report), which was written by the same session that implemented the
+   phase and is therefore no more self-certifiable than the phase was.
+   1b. **TD-60**: close the `multer` high advisories (bump `@nestjs/platform-express` or add a lockfile
+   override) so `pnpm audit --audit-level=high` is green again before the re-audit runs.
 2. **C2-P02**: `pnpm install --frozen-lockfile && pnpm verify` in `C:\Quest`, plus
    `pnpm --filter @quest/mobile exec expo export --platform android`; record the results here.
 3. **C3-P02**: open a pull request for `phase-02-quest-core` so the CI workflow runs, and confirm
@@ -334,4 +373,5 @@ messaging (ADR-003), provider-independent AI Gateway (ADR-004), direct-to-storag
 Expo mobile (ADR-006), NestJS + zod (ADR-007), AWS me-central-1 (ADR-008), pnpm/Turborepo toolchain
 (ADR-009), immutable-id identity with Argon2id + HS256/rotating-refresh tokens and OIDC adapters
 (ADR-011), OpenAPI generated from zod contracts (ADR-012), and Quest publication gated by a content
-hash and enforced in three layers — shared rule, domain gate, database CHECK (ADR-013).
+hash and enforced in three layers — shared rule, domain gate, database CHECK (ADR-013), with owner
+account lifecycle governing published content through a synchronous Identity query port (ADR-014).

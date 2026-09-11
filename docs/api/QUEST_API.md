@@ -113,16 +113,28 @@ is still read when present, so a signed-in caller additionally gets Quests by bl
 and a `participating` flag on each card. Age-gated Quests are filtered by the _published_ band; an
 anonymous caller therefore only ever sees Quests published at the platform's lowest band.
 
+Quests whose **owner account is no longer eligible** to have public content — suspended, deactivated
+or pending deletion, as Identity judges it through `OWNER_ELIGIBILITY` (ADR-014) — are absent from
+the list for every caller, including anonymous ones. The eligibility of a whole page of owners is
+resolved in one batched Identity query per pass and folded into the same refill loop that removes
+blocked owners, so removing them shortens the underlying read and never the page you receive:
+`limit` still means `limit`, and the cursor still advances over every row considered.
+
 `GET /v1/quests/:questId` answers 404 wherever the caller may not know a Quest exists: someone
 else's draft, a suspended or archived Quest, a `PRIVATE` one, a Quest whose owner is blocked either
-way, and a Quest whose published age band the viewer does not satisfy. Age restriction hides rather
+way, a Quest whose published age band the viewer does not satisfy, and a Quest whose **owner account
+is not currently eligible** to have public content. That last case is indistinguishable from the
+others by design: the response carries no account state, no owner metadata and no reason, because a
+404 that explains itself is a 403 wearing a different number. Age restriction hides rather
 than merely refusing acceptance, because the instructions are the dangerous part — greying out a
 button would still show a 14-year-old how to do the thing. A 403 in any of these cases would confirm
 existence, which is exactly what the caller must not learn.
 
 Owners see three extra fields on their own Quests: `contentHash`, `publishedContentHash` and
-`publishBlockers`. Staff holding `VIEW_QUEST_SUPPORT` can read a Quest in any state, but those
-owner-integrity fields stay `null` for them; the support view is the route for staff work.
+`publishBlockers`. Staff holding `VIEW_QUEST_SUPPORT` can read a Quest in any state — including one concealed because
+its owner is ineligible, which is the whole point of a support view — but those owner-integrity
+fields stay `null` for them; the support view is the route for staff work. An `ERASED` Quest is 404
+for everyone, support included: there is nothing left in it to inspect.
 
 `QuestDetail.safety` is a badge, not a verdict about the draft: it is populated only when the latest
 assessment matches the content that is actually published (or, for an unpublished Quest, its current
@@ -140,7 +152,8 @@ form `Not eligible: <REASONS>`. The reasons are `AUTHENTICATION_REQUIRED`, `BLOC
 `OWNER_CANNOT_PARTICIPATE`, `QUEST_NOT_PUBLISHED`, `QUEST_NOT_OPEN`, `OUTSIDE_AVAILABILITY_WINDOW`,
 `EMAIL_NOT_VERIFIED`, `AGE_RESTRICTED`, `COUNTRY_BLOCKED`, `COUNTRY_NOT_ALLOWED` and
 `COUNTRY_UNKNOWN`. The last exists because a country restriction that cannot be checked against a
-viewer fails closed rather than open. Country rules are the owner's declared lists folded with the
+viewer fails closed rather than open. An ineligible owner produces the concealed 404, never a reason
+code: there is no `OWNER_SUSPENDED` in that list and there deliberately never will be. Country rules are the owner's declared lists folded with the
 published assessment's restrictions, so the geographic half of a `RESTRICTED` decision is enforced
 and not merely recorded.
 
@@ -152,9 +165,12 @@ the caller were an ordinary member.
 from the Quest as it stands, so an owner cannot shorten someone's deadline after the fact.
 `completion-request` refuses with 409 once that window has passed, and is where Phase 02 stops: the
 claim is recorded and `COMPLETION_REQUESTED` is terminal. Evidence, verification and rewards are
-later phases, and no XP, badge or ranking is issued anywhere in this API. `cancel` works from
-`ACCEPTED` or `STARTED`, and deliberately still works when the Quest is no longer published — a
-participant must always be able to let go of an attempt. Attempts whose window elapses become
+later phases, and no XP, badge or ranking is issued anywhere in this API. Both `start` and `completion-request` also refuse with 409 while the Quest's **owner** is no longer
+eligible, carrying the same `This Quest is no longer available` an unpublished Quest produces — word
+for word, so a participant cannot tell a withdrawn Quest from a suspended author. `cancel` works from
+`ACCEPTED` or `STARTED`, and deliberately still works when the Quest is no longer published or its
+owner is no longer eligible — a participant must always be able to let go of an attempt, and must
+never be trapped in one they can neither finish nor close by somebody else's suspension. Attempts whose window elapses become
 `EXPIRED` through an idempotent sweep run by `pnpm --filter @quest/api quests:process-expiries`
 — a scheduled worker replaces the command once a deployment exists. There is no HTTP route for it.
 

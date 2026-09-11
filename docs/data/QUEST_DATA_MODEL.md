@@ -154,6 +154,21 @@ moderator's id and reason are cleared from `quest.suspended_by` and `quest.suspe
 
 ## Account lifecycle
 
+**Before erasure: visibility follows the account.** A Quest's publication proof lives in its own
+row, but whether that proof may currently be _acted on_ also depends on the owner's account state.
+Quest Core holds no copy of that state and no column for it: it asks Identity through
+`OWNER_ELIGIBILITY` on each request (ADR-014), and only `ACTIVE` owners have public content. A
+`SUSPENDED`, `DEACTIVATED` or `DELETION_REQUESTED` owner's Quests are concealed from reads,
+discovery and new acceptances, and cannot be advanced by existing participants — while the rows
+themselves are untouched, so nothing is lost and reactivation restores visibility without a
+migration, a backfill or a repair job. What reactivation cannot do is restore a Quest whose _own_
+proof stopped being valid meanwhile: the ADR-013 layers still decide publication, so a suspended,
+archived, erased, re-assessed or stale-approval Quest stays concealed on its own account.
+
+The deliberate absence of a denormalised `owner_eligible` column is the decision here. Suspending an
+account with thousands of Quests would otherwise be a write amplification whose partially-applied
+intermediate state is a partially-applied sanction. ADR-014 records the alternatives.
+
 **Export.** The Quest context registers a contributor with the export registry and contributes a
 `quest` section: the Quests the account wrote and the attempts they made, bounded at 1000 rows per
 collection with the truncation reported per collection.

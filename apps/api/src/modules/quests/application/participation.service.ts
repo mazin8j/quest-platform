@@ -24,9 +24,10 @@ import { isUniqueViolation } from '../../../common/persistence/unique-violation'
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import { EVENT_PUBLISHER } from '../../../infrastructure/events/events.module';
+import { OWNER_ELIGIBILITY, type OwnerEligibilityPort } from '../../identity';
 import { BLOCK_QUERY, PROFILE_QUERY } from '../../profiles';
 import type { BlockQueryPort, ProfileQueryPort } from '../../profiles';
-import { evaluateAcceptEligibility } from '../domain/eligibility';
+import { type OwnerEligible, evaluateAcceptEligibility } from '../domain/eligibility';
 import type { QuestRecord } from '../domain/quest';
 import {
   type ParticipationRecord,
@@ -54,10 +55,26 @@ export class ParticipationService {
     @Inject(METRICS) private readonly metrics: MetricsPort,
     @Inject(BLOCK_QUERY) private readonly blocks: BlockQueryPort,
     @Inject(PROFILE_QUERY) private readonly profiles: ProfileQueryPort,
+    @Inject(OWNER_ELIGIBILITY) private readonly ownerEligibility: OwnerEligibilityPort,
     private readonly quests: QuestRepository,
     private readonly participations: ParticipationRepository,
     private readonly questService: QuestService,
   ) {}
+
+  /**
+   * Whether the Quest's owner may currently have public content, per Identity (ADR-014).
+   *
+   * A lookup that fails is counted and reported as ineligible: participation in a Quest whose
+   * author cannot be established is refused, never granted by default (audit P02-41).
+   */
+  private async ownerEligible(ownerAccountId: string): Promise<OwnerEligible> {
+    try {
+      return await this.ownerEligibility.isPublicationEligible(ownerAccountId);
+    } catch {
+      this.metrics.increment('quest.core.owner_eligibility_unavailable');
+      return false;
+    }
+  }
 
   async accept(
     principal: Principal,
@@ -67,17 +84,21 @@ export class ParticipationService {
     const quest = await this.quests.findById(questId);
     if (!quest || quest.state === QuestState.ERASED) throw ApiError.notFound('Quest');
 
-    const [blocked, country, effectiveEligibility] = await Promise.all([
+    const [blocked, country, effectiveEligibility, ownerEligible] = await Promise.all([
       this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId),
       this.profiles.countryFor(principal.accountId),
       // Folds the *published* assessment's country restrictions into the owner's declared lists,
       // so the geographic half of a RESTRICTED decision is enforced, not merely recorded (P02-02).
       this.questService.effectiveEligibilityOf(quest),
+      // Every cross-context lookup is resolved before the transaction opens, so no row lock is
+      // ever held while this service waits on another context's connection.
+      this.ownerEligible(quest.ownerAccountId),
     ]);
 
     const eligibility = evaluateAcceptEligibility({
       quest,
       eligibility: effectiveEligibility,
+      ownerEligible,
       publishedMinimumAgeBand: this.questService.publishedAgeBandOf(quest),
       viewer: {
         accountId: principal.accountId,
@@ -323,6 +344,24 @@ export class ParticipationService {
       acceptedWindowHours: number,
     ) => Partial<ParticipationRecord> & { state: ParticipationState },
   ): Promise<{ record: ParticipationRecord; quest: QuestRecord }> {
+    // An owner who is no longer eligible takes their Quest out of circulation, so an attempt
+    // already in flight can no longer be advanced — but it can always be abandoned. Leaving CANCEL
+    // open is deliberate: the alternative traps a participant in an attempt they cannot finish and
+    // cannot close, on somebody else's suspension (audit P02-41).
+    //
+    // Resolved before the transaction, matching `accept`, so no participation row is locked while
+    // Identity is queried. The unlocked preview read is advisory only: when it cannot identify the
+    // Quest or the participation is not the caller's, the locked read below reports NOT FOUND, and
+    // a 404 must not be downgraded to a 409 that confirms the attempt exists.
+    let ownerEligible: OwnerEligible = true;
+    if (transition !== 'CANCEL') {
+      const preview = await this.participations.findById(participationId);
+      const ownerAccountId =
+        preview && preview.accountId === principal.accountId
+          ? (await this.quests.findById(preview.questId))?.ownerAccountId
+          : undefined;
+      if (ownerAccountId !== undefined) ownerEligible = await this.ownerEligible(ownerAccountId);
+    }
     return this.db.transaction(async (tx) => {
       const current = await this.participations.findByIdForUpdate(participationId, tx);
       // Another account's participation is not found, never forbidden.
@@ -337,7 +376,10 @@ export class ParticipationService {
       }
       const quest = await this.quests.findById(current.questId, tx);
       if (!quest) throw ApiError.notFound('Quest');
-      if (transition !== 'CANCEL' && quest.state !== QuestState.PUBLISHED) {
+      // Word for word the message an unpublished Quest gets, and deliberately so: the participant
+      // is entitled to know the attempt cannot proceed, and to nothing at all about the account
+      // behind it. "Suspended author" and "withdrawn Quest" must be indistinguishable here.
+      if (transition !== 'CANCEL' && (quest.state !== QuestState.PUBLISHED || !ownerEligible)) {
         throw ApiError.conflict('This Quest is no longer available');
       }
       const patch = patchFor(current, quest, await this.acceptedWindowHours(current, quest, tx));

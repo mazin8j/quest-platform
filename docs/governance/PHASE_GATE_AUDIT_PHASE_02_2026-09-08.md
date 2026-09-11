@@ -351,3 +351,144 @@ half did not protect it, and would have reported success forever.
 | `pnpm audit --audit-level=high`, secret scan | PASS |
 
 Not merged into `main`. Phase 03 not started.
+
+---
+
+## 7. Gate remediation — P02-41 / TD-48 (2026-09-11)
+
+Appended, not edited. Nothing in §§0–6 has been rewritten: the findings above are the historical
+record of what the audit found on 2026-09-08, including the reasoning for deferring P02-41, and that
+reasoning stands as written. This section records what was done about it afterwards.
+
+**Condition A2 is discharged. Condition A1 is not, and cannot be discharged by this session.**
+
+### The defect, reproduced before anything was changed
+
+Eight integration tests were written against the unmodified branch first. Six failed, on a real
+PostgreSQL 16 + Redis, proving the finding from behaviour rather than from reading the code:
+
+| Assertion | Observed before the repair |
+| --- | --- |
+| detail conceals a SUSPENDED owner's Quest | `expected 200 to be 404` |
+| detail conceals a DEACTIVATED owner's Quest | `expected 200 to be 404` |
+| detail conceals a DELETION_REQUESTED owner's Quest | `expected 200 to be 404` |
+| discovery excludes them | `expected true to be false` |
+| `start` refused while the owner is ineligible | `expected 200 to be 409` |
+| `completion-request` refused | `expected 200 to be 409` |
+
+The two that passed before the repair were the ones asserting what must *not* change: support staff
+can still inspect a concealed Quest, and reinstatement must not resurrect a Quest whose own safety
+proof went stale. Both still pass.
+
+`DELETED` was already covered by the erasure cascade and is additionally asserted in the policy
+table test; `ACTIVE` is the control in every case above.
+
+### The decision
+
+**ADR-014** — `docs/adr/ADR-014-owner-lifecycle-and-published-content.md`. Options A (event
+consumer), B (denormalised flag), C (synchronous port) and D (hybrid) are evaluated there against
+correctness, fail-closed behaviour, race windows, cross-context coupling, N+1 risk, performance,
+missed-event recovery, microservice extraction, outbox implications and operational complexity.
+
+**C was chosen.** A is unreliable without a transactional outbox, which is still a pending decision
+in the ADR index — a dropped event would leave a suspended author's content public with nothing to
+detect it, which is fail-open on a safety sanction. B is A's problem plus write amplification whose
+partially-applied intermediate state is a partially-applied sanction. D is the right shape at a scale
+we cannot yet measure and is recorded as a revisit trigger.
+
+### What changed
+
+Identity gained `OWNER_ELIGIBILITY` (`ports/owner-eligibility.port.ts`), backed by `AccountService`,
+with `isPublicationEligible(id)` and `publicationEligibilityFor(ids)`. The policy —
+`PUBLICATION_ELIGIBLE_STATES = {ACTIVE}`, unknown states ineligible — lives there and nowhere else.
+Quest Core contains no account-lifecycle vocabulary, imports no Identity persistence, and
+`pnpm deps:check` still passes with 0 violations.
+
+- **Read:** `questAccessFor` takes `ownerEligible` and returns HIDDEN → **404**, after the owner and
+  support checks, before visibility and age band. No account state, owner metadata or reason is in
+  the response.
+- **Discovery:** one batched lookup per pass inside the existing `MAX_DISCOVERY_PASSES` refill loop.
+  No N+1. Survivors are counted inside the loop, so the page the caller receives is not shortened
+  and the keyset cursor still advances over every row considered — the P02-19 failure mode is not
+  reintroduced.
+- **Participation:** `accept` refuses as a concealed 404, never an explained 403. `start` and
+  `completion-request` return 409 with the same message an unpublished Quest produces, word for
+  word. `cancel` stays open, deliberately: a participant must not be trapped in an attempt they can
+  neither finish nor close by someone else's suspension. No Proof, XP or reward behaviour was
+  invented.
+- **Failure:** a lookup that throws increments `quest.core.owner_eligibility_unavailable` and is
+  treated as ineligible. An absent id in the batch map is ineligible. Nothing fails open.
+- **Reactivation:** needs no mechanism, because eligibility is computed per request from live state.
+  ADR-013's three layers are untouched, so a stale, rejected, suspended, archived or erased Quest
+  stays concealed on its own account.
+- **Concurrency:** eligibility is resolved *before* each transaction opens, so no row lock is held
+  across a cross-context call. The resulting narrow window is stated and accepted in ADR-014's
+  Consequences; it can let one already-accepted participant advance one step, and cannot grant
+  access to anyone else.
+
+### Mutation testing of the repair
+
+Each of the three enforcement points was reverted individually against the full suite (never with a
+`-t` filter, after that produced a false negative during the original audit):
+
+| Reverted | Result |
+| --- | --- |
+| `if (!ownerEligible) return HIDDEN` in `questAccessFor` | 4 integration + 3 unit tests fail |
+| the batched filter in `listDiscoverable` | 4 integration tests fail |
+| `\|\| !ownerEligible` in the participation transition guard | 1 integration test fails |
+| the batched filter replaced by an equivalent **per-row** lookup | 1 integration test fails: `expected 44 to be +0` |
+
+Every enforcement point is load-bearing for at least one test, and no test passes for the wrong
+reason. The fourth row is the N+1 guard: the discovery test spies on `AccountService` and asserts
+that a walk of the whole feed makes **zero** per-Quest lookups and at most one batched lookup per
+refill pass. A per-row implementation with identical *behaviour* — same Quests concealed, same
+pagination — still fails it, at 44 lookups.
+
+### Validation (2026-09-11, `.turbo` deleted, `--force`)
+
+| Check | Result |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | PASS |
+| `pnpm turbo run lint typecheck test build --force` | PASS — 43/43 tasks, **295** unit tests |
+| `pnpm deps:check` | PASS — 0 violations, 247 modules, 594 dependencies |
+| Integration + E2E vs real PostgreSQL 16 + PostGIS + pgvector + Redis | PASS — **84** tests (5 files) |
+| Clean database → status → migrate → migrate again → status | PASS — 3 applied, 0 pending, idempotent |
+| OpenAPI regenerate + `git diff --exit-code` | PASS — no drift, 68 operations |
+| Builds (packages, api, web, admin) | PASS (inside the turbo run above) |
+| Expo export (`--platform android`, the CI target) | PASS **with `EXPO_OFFLINE=1`** — see below |
+| Secret scan over every changed and added file; `.env` still untracked | PASS |
+| `pnpm audit --audit-level=high` | **FAIL** — see below |
+
+**Docker was not available in this environment.** PostgreSQL 16.13 with PostGIS 3.4 and pgvector, and
+Redis 7.0.15, were run natively (`pg_ctlcluster 16 main start`, `redis-server --daemonize yes`)
+against `quest:quest@127.0.0.1:5432`. Every integration figure above was produced against those real
+servers, not a mock.
+
+**Expo export** fails in this sandbox without `EXPO_OFFLINE=1`, with `HTTP Proxy Network Error:
+Forbidden`. The agent proxy's own status endpoint names the denied hosts — `api.expo.dev:443` and
+`cdp.expo.dev:443` — so this is the sandbox's network egress policy, not a defect in the app. With
+offline mode the CI command completes and emits the Android bundle. Reported this way rather than as
+a plain PASS because the unmodified command did not succeed here.
+
+**`pnpm audit --audit-level=high` fails**, and did not fail on 2026-09-08. Three high advisories
+against `multer@2.2.0` (GHSA-535w-7cp7-47q4 and two further DoS advisories), reached only through
+`@nestjs/platform-express@12.0.1`; patched in `>=2.3.0`. Neither `package.json` nor `pnpm-lock.yaml`
+is modified by this remediation, so the dependency set is unchanged and this is a newly published
+advisory rather than a regression. It is not currently reachable — the API registers no
+`FileInterceptor` and accepts no multipart upload — but it is a mandatory gate command that now
+fails, so it is **not** reported as PASS. Tracked as **TD-60**, and it is a new gate item, not one
+this session may close on its own judgement.
+
+### Gate state after this remediation
+
+| | |
+| --- | --- |
+| Open P0 | **0** |
+| Open P1 | **0** — P02-41 was the last one; conditions A1, A3–A6 remain |
+
+Conditions A3–A6 are unchanged. **A1 — independent re-audit by a session with no implementation
+history — remains open and is unaffected by this work**; this session wrote the remediation and is
+therefore no more able to certify it than it was able to certify the original implementation. TD-60
+is new since the audit and is unresolved.
+
+Phase 03 is **not** authorized by this document. Not merged into `main`.

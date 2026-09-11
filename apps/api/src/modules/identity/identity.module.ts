@@ -31,6 +31,7 @@ import { LifecycleRepository } from './infrastructure/lifecycle.repository';
 import { InMemoryMailer, LogMailer } from './infrastructure/mailers';
 import { SessionRepository } from './infrastructure/session.repository';
 import { ACCOUNT_FACTS } from './ports/account-facts.port';
+import { OWNER_ELIGIBILITY } from './ports/owner-eligibility.port';
 import { IDENTITY_PROVIDERS, type IdentityProviderPort } from './ports/identity-provider.port';
 import { MAILER } from './ports/mailer.port';
 import { PASSWORD_HASHER } from './ports/password-hasher.port';
@@ -103,8 +104,18 @@ import { TOKEN_SIGNER } from './ports/token-signer.port';
     // The only way another context may learn account facts (state, email verification). Identity
     // owns the port so downstream contexts never touch identity tables.
     { provide: ACCOUNT_FACTS, useExisting: AccountService },
+    // How another context asks whether an owner's content may be public (ADR-014). Identity owns
+    // the policy; Quest Core only consumes the answer.
+    { provide: OWNER_ELIGIBILITY, useExisting: AccountService },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
-  exports: [PRINCIPAL_RESOLVER, ACCOUNT_FACTS, AccountDeletionJob, DataExportService, MAILER],
+  exports: [
+    PRINCIPAL_RESOLVER,
+    ACCOUNT_FACTS,
+    OWNER_ELIGIBILITY,
+    AccountDeletionJob,
+    DataExportService,
+    MAILER,
+  ],
 })
 export class IdentityModule {}

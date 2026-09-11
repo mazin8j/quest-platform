@@ -28,9 +28,11 @@ import {
   REQUIRED_ERASURE_CONTEXTS,
 } from '../../src/infrastructure/account-erasure';
 import { AccountDeletionJob, DataExportService } from '../../src/modules/identity';
+import { AccountService } from '../../src/modules/identity/application/account.service';
 import { AccountRepository } from '../../src/modules/identity/infrastructure/account.repository';
 import { LifecycleRepository } from '../../src/modules/identity/infrastructure/lifecycle.repository';
 import { ParticipationService } from '../../src/modules/quests';
+import { MAX_DISCOVERY_PASSES } from '../../src/modules/quests/application/quest-view.service';
 import { type IntegrationApp, createIntegrationApp } from './helpers/create-integration-app';
 
 const enabled = process.env.RUN_INTEGRATION === 'true';
@@ -1613,6 +1615,287 @@ describe.skipIf(!enabled)('quest core (real database)', () => {
       .set(auth(owner))
       .send({ expectedContentHash: draft.contentHash });
     expect(refused.status).toBe(409);
+  });
+
+  // ------------------------------- owner account lifecycle (TD-48 / P02-41, gate remediation) ----
+
+  /** Grants SUPER_ADMIN and re-signs so the token carries the role. */
+  async function staffActor(email: string): Promise<Actor> {
+    const staff = await member(email);
+    await harness().app.get(AccountRepository).grantRole(staff.accountId, 'SUPER_ADMIN', null);
+    return signIn(staff);
+  }
+
+  /** Every public and participant-facing surface for one Quest, for one caller. */
+  async function surfaces(quest: { questId: string }, viewer: Actor | null) {
+    const headers = viewer ? auth(viewer) : {};
+    const detail = await request(server()).get(`/v1/quests/${quest.questId}`).set(headers);
+    const list = await request(server()).get('/v1/quests?limit=50').set(headers);
+    const accept = await request(server())
+      .post(`/v1/quests/${quest.questId}/participation`)
+      .set(headers)
+      .send({});
+    return {
+      detailStatus: detail.status,
+      inDiscovery: questListSchema.parse(list.body).data.some((q) => q.questId === quest.questId),
+      acceptStatus: accept.status,
+    };
+  }
+
+  it('hides a published Quest when its owner is SUSPENDED (P02-41)', async () => {
+    const owner = await member('lifecycle-susp-owner@example.com');
+    const viewer = await member('lifecycle-susp-viewer@example.com');
+    const staff = await staffActor('lifecycle-susp-staff@example.com');
+    const quest = await publishQuest(owner);
+
+    // Baseline: an ACTIVE owner's Quest is visible and acceptable.
+    const before = await surfaces(quest, viewer);
+    expect(before).toEqual({ detailStatus: 200, inDiscovery: true, acceptStatus: 201 });
+
+    const suspended = await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Authoring dangerous Quests' });
+    expect(suspended.status, JSON.stringify(suspended.body)).toBe(200);
+
+    // A second viewer must not be able to see or take on the suspended owner's Quest.
+    const other = await member('lifecycle-susp-other@example.com');
+    const after = await surfaces(quest, other);
+    expect(after.detailStatus, 'detail must conceal a suspended owner Quest').toBe(404);
+    expect(after.inDiscovery, 'discovery must exclude a suspended owner Quest').toBe(false);
+    expect(after.acceptStatus, 'accept must be concealed, not explained').toBe(404);
+
+    // ...and neither may an anonymous caller.
+    const anon = await surfaces(quest, null);
+    expect(anon.detailStatus).toBe(404);
+    expect(anon.inDiscovery).toBe(false);
+
+    // The content itself is untouched: suspension is not erasure.
+    const row = await db().query<{ state: string; title: string }>(
+      'SELECT state, title FROM quest WHERE id = $1',
+      [quest.questId],
+    );
+    expect(row.rows[0]?.state).toBe('PUBLISHED');
+    expect(row.rows[0]?.title).not.toBe('[erased]');
+  });
+
+  it('hides a published Quest when its owner is DEACTIVATED (P02-41)', async () => {
+    const owner = await member('lifecycle-deact-owner@example.com');
+    const viewer = await member('lifecycle-deact-viewer@example.com');
+    const quest = await publishQuest(owner);
+    expect((await surfaces(quest, viewer)).inDiscovery).toBe(true);
+
+    expect((await request(server()).post('/v1/me/deactivate').set(auth(owner))).status).toBe(204);
+
+    const other = await member('lifecycle-deact-other@example.com');
+    const after = await surfaces(quest, other);
+    expect(after.detailStatus).toBe(404);
+    expect(after.inDiscovery).toBe(false);
+    expect(after.acceptStatus).toBe(404);
+  });
+
+  it('hides a published Quest when its owner has requested deletion (P02-41, fail-closed)', async () => {
+    const owner = await member('lifecycle-del-owner@example.com');
+    const quest = await publishQuest(owner);
+
+    const requested = await request(server())
+      .post('/v1/me/deletion-request')
+      .set(auth(owner))
+      .send({ currentPassword: owner.password, reason: 'leaving' });
+    expect(requested.status, JSON.stringify(requested.body)).toBe(201);
+
+    // Fail-closed: the account is on its way out, so its Quests stop being public immediately
+    // rather than at the end of the grace period.
+    const other = await member('lifecycle-del-other@example.com');
+    const after = await surfaces(quest, other);
+    expect(after.detailStatus).toBe(404);
+    expect(after.inDiscovery).toBe(false);
+    expect(after.acceptStatus).toBe(404);
+  });
+
+  it('blocks start and completion for an existing participant once the owner is suspended (P02-41)', async () => {
+    const owner = await member('lifecycle-part-owner@example.com');
+    const participant = await member('lifecycle-part-participant@example.com');
+    const staff = await staffActor('lifecycle-part-staff@example.com');
+    const quest = await publishQuest(owner);
+    const accepted = participationViewSchema.parse(
+      (
+        await request(server())
+          .post(`/v1/quests/${quest.questId}/participation`)
+          .set(auth(participant))
+          .send({})
+      ).body,
+    );
+
+    await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Authoring dangerous Quests' });
+
+    // An attempt accepted before the suspension may not be advanced while the owner is ineligible.
+    const started = await request(server())
+      .post(`/v1/me/participations/${accepted.participationId}/start`)
+      .set(auth(participant));
+    expect(started.status, 'start must be refused while the owner is ineligible').toBe(409);
+
+    // Abandoning is always allowed — the participant must never be trapped.
+    expect(
+      (
+        await request(server())
+          .post(`/v1/me/participations/${accepted.participationId}/cancel`)
+          .set(auth(participant))
+      ).status,
+    ).toBe(200);
+  });
+
+  it('restores visibility when the owner is reinstated, but only on still-valid publication proof (P02-41)', async () => {
+    const owner = await member('lifecycle-reinstate-owner@example.com');
+    const viewer = await member('lifecycle-reinstate-viewer@example.com');
+    const staff = await staffActor('lifecycle-reinstate-staff@example.com');
+    const quest = await publishQuest(owner);
+
+    await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Under review' });
+    expect((await surfaces(quest, viewer)).inDiscovery).toBe(false);
+
+    const reinstated = await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/reinstate`)
+      .set(auth(staff));
+    expect(reinstated.status, JSON.stringify(reinstated.body)).toBe(200);
+
+    // The Quest's own publication proof was never touched, so visibility resumes.
+    const after = await surfaces(quest, viewer);
+    expect(after.detailStatus).toBe(200);
+    expect(after.inDiscovery).toBe(true);
+  });
+
+  it('does not resurrect a Quest whose own safety proof went stale while the owner was suspended (P02-41)', async () => {
+    const owner = await member('lifecycle-stale-owner@example.com');
+    const viewer = await member('lifecycle-stale-viewer@example.com');
+    const staff = await staffActor('lifecycle-stale-staff@example.com');
+    const quest = await publishQuest(owner);
+
+    await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Under review' });
+
+    // Trust & Safety withdraws the Quest itself while the owner is suspended.
+    await request(server())
+      .post(`/v1/admin/quests/${quest.questId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Quest is unsafe regardless of the owner' });
+
+    await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/reinstate`)
+      .set(auth(staff));
+
+    // Owner eligibility returning must not resurrect a Quest the safety gate took down.
+    const after = await surfaces(quest, viewer);
+    expect(after.detailStatus).toBe(404);
+    expect(after.inDiscovery).toBe(false);
+  });
+
+  it('keeps discovery pagination correct when ineligible owners are mixed in (P02-41)', async () => {
+    const staff = await staffActor('lifecycle-page-staff@example.com');
+    const viewer = await member('lifecycle-page-viewer@example.com');
+    const eligible: string[] = [];
+    const concealed: string[] = [];
+    // Interleave eligible and soon-ineligible owners so filtering cannot be masked by ordering.
+    for (let i = 0; i < 6; i += 1) {
+      const owner = await member(`lifecycle-page-${i}@example.com`);
+      const quest = await publishQuest(owner);
+      if (i % 2 === 0) {
+        await request(server())
+          .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+          .set(auth(staff))
+          .send({ reason: 'Mixed-owner pagination test' });
+        concealed.push(quest.questId);
+      } else {
+        eligible.push(quest.questId);
+      }
+    }
+
+    // Count how the read side actually asks Identity. The point of the batch method is that a page
+    // of N Quests by N different owners costs one lookup, not N: if a future change reaches for the
+    // single-lookup method inside the row loop, `single` becomes non-zero and this fails.
+    const accounts = harness().app.get(AccountService);
+    let batched = 0;
+    let single = 0;
+    const realBatch = accounts.publicationEligibilityFor.bind(accounts);
+    const realSingle = accounts.isPublicationEligible.bind(accounts);
+    vi.spyOn(accounts, 'publicationEligibilityFor').mockImplementation(async (ids) => {
+      batched += 1;
+      return realBatch(ids);
+    });
+    vi.spyOn(accounts, 'isPublicationEligible').mockImplementation(async (id) => {
+      single += 1;
+      return realSingle(id);
+    });
+
+    // Walk every page with a small limit; each of this test's eligible Quests must appear exactly
+    // once and no suspended owner's Quest may appear at all.
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    try {
+      for (let page = 0; page < 20; page += 1) {
+        const res = await request(server())
+          .get(`/v1/quests?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)
+          .set(auth(viewer));
+        pages += 1;
+        const body = questListSchema.parse(res.body);
+        seen.push(...body.data.map((q) => q.questId));
+        if (!body.pageInfo.hasMore || !body.pageInfo.nextCursor) break;
+        cursor = body.pageInfo.nextCursor;
+      }
+    } finally {
+      vi.restoreAllMocks();
+    }
+
+    for (const id of eligible) {
+      expect(
+        seen.filter((q) => q === id),
+        `eligible Quest ${id} paged exactly once`,
+      ).toHaveLength(1);
+    }
+    for (const id of concealed) {
+      expect(seen, `suspended owner Quest ${id} never listed`).not.toContain(id);
+    }
+    // No per-row lookups at all, and at most one batched lookup per refill pass per page — which is
+    // the bound `MAX_DISCOVERY_PASSES` already places on the loop, independent of how many rows or
+    // how many distinct owners the page touches.
+    expect(single, 'discovery must not fall back to per-Quest account lookups').toBe(0);
+    expect(batched).toBeGreaterThan(0);
+    expect(batched, 'one batched lookup per refill pass, not per row').toBeLessThanOrEqual(
+      pages * MAX_DISCOVERY_PASSES,
+    );
+  });
+
+  it('lets Quest support staff still inspect a concealed Quest (P02-41)', async () => {
+    const owner = await member('lifecycle-support-owner@example.com');
+    const staff = await staffActor('lifecycle-support-staff@example.com');
+    const quest = await publishQuest(owner);
+    await request(server())
+      .post(`/v1/admin/accounts/${owner.accountId}/suspend`)
+      .set(auth(staff))
+      .send({ reason: 'Under review' });
+
+    // The support surface exists to investigate exactly this situation.
+    expect(
+      (await request(server()).get(`/v1/admin/quests/${quest.questId}`).set(auth(staff))).status,
+    ).toBe(200);
+
+    // An ordinary member still gets nothing.
+    const nobody = await member('lifecycle-support-nobody@example.com');
+    expect(
+      (await request(server()).get(`/v1/admin/quests/${quest.questId}`).set(auth(nobody))).status,
+    ).toBe(403);
+    expect(
+      (await request(server()).get(`/v1/quests/${quest.questId}`).set(auth(nobody))).status,
+    ).toBe(404);
   });
 
   // ------------------------------------------------------------------------- reference ----

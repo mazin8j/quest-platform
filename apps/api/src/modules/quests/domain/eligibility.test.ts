@@ -15,6 +15,13 @@ const OWNER = '01890000-0000-7000-8000-00000000aaaa';
 const VIEWER = '01890000-0000-7000-8000-00000000bbbb';
 const NOW = new Date('2026-03-01T12:00:00.000Z');
 const HOUR = 3_600_000;
+/**
+ * What `OwnerEligibilityPort` says about an owner whose account is in good standing. Named rather
+ * than written as a bare `true` so that every existing case reads as "this rule is about something
+ * other than the owner's account state", and the P02-41 cases stand out as the ones that are not.
+ */
+const ELIGIBLE = true;
+const INELIGIBLE = false;
 
 function quest(overrides: Partial<QuestRecord> = {}): QuestRecord {
   return {
@@ -81,7 +88,7 @@ function eligibility(overrides: Record<string, unknown> = {}): QuestEligibility 
 describe('read access', () => {
   it('gives the owner access in every state', () => {
     for (const state of Object.values(QuestState)) {
-      expect(questAccessFor(quest({ state }), viewer({ accountId: OWNER })), state).toBe(
+      expect(questAccessFor(quest({ state }), viewer({ accountId: OWNER }), ELIGIBLE), state).toBe(
         QuestAccess.OWNER,
       );
     }
@@ -89,7 +96,7 @@ describe('read access', () => {
 
   it('gives staff access for support work', () => {
     expect(
-      questAccessFor(quest({ state: QuestState.SUSPENDED }), viewer({ canViewSupport: true })),
+      questAccessFor(quest({ state: QuestState.SUSPENDED }), viewer({ canViewSupport: true }), ELIGIBLE),
     ).toBe(QuestAccess.OWNER);
   });
 
@@ -101,29 +108,53 @@ describe('read access', () => {
       QuestState.SUSPENDED,
       QuestState.ERASED,
     ]) {
-      expect(questAccessFor(quest({ state }), viewer()), state).toBe(QuestAccess.HIDDEN);
-      expect(questAccessFor(quest({ state }), ANONYMOUS), state).toBe(QuestAccess.HIDDEN);
+      expect(questAccessFor(quest({ state }), viewer(), ELIGIBLE), state).toBe(QuestAccess.HIDDEN);
+      expect(questAccessFor(quest({ state }), ANONYMOUS, ELIGIBLE), state).toBe(QuestAccess.HIDDEN);
     }
   });
 
   it('hides a PRIVATE Quest even when published', () => {
-    expect(questAccessFor(quest({ visibility: 'PRIVATE' }), viewer())).toBe(QuestAccess.HIDDEN);
+    expect(questAccessFor(quest({ visibility: 'PRIVATE' }), viewer(), ELIGIBLE)).toBe(
+      QuestAccess.HIDDEN,
+    );
   });
 
   it('lets an UNLISTED Quest be read by link but keeps it out of discovery', () => {
-    expect(questAccessFor(quest({ visibility: 'UNLISTED' }), viewer())).toBe(QuestAccess.VIEWER);
+    expect(questAccessFor(quest({ visibility: 'UNLISTED' }), viewer(), ELIGIBLE)).toBe(
+      QuestAccess.VIEWER,
+    );
     expect(isDiscoverable(quest({ visibility: 'UNLISTED' }), NOW)).toBe(false);
   });
 
   it('takes block precedence over publication', () => {
-    expect(questAccessFor(quest(), viewer({ blocked: true }))).toBe(QuestAccess.HIDDEN);
+    expect(questAccessFor(quest(), viewer({ blocked: true }), ELIGIBLE)).toBe(QuestAccess.HIDDEN);
   });
 
   it('does not let a block hide a Quest from its own owner or from staff', () => {
-    expect(questAccessFor(quest(), viewer({ accountId: OWNER, blocked: true }))).toBe(
+    expect(questAccessFor(quest(), viewer({ accountId: OWNER, blocked: true }), ELIGIBLE)).toBe(
       QuestAccess.OWNER,
     );
-    expect(questAccessFor(quest(), viewer({ canViewSupport: true, blocked: true }))).toBe(
+    expect(questAccessFor(quest(), viewer({ canViewSupport: true, blocked: true }), ELIGIBLE)).toBe(
+      QuestAccess.OWNER,
+    );
+  });
+
+  // The owner's account lifecycle governs their published content (audit P02-41 / TD-48).
+  it('hides a published Quest whose owner is no longer eligible', () => {
+    expect(questAccessFor(quest(), viewer(), INELIGIBLE)).toBe(QuestAccess.HIDDEN);
+    expect(questAccessFor(quest(), ANONYMOUS, INELIGIBLE)).toBe(QuestAccess.HIDDEN);
+    expect(questAccessFor(quest({ visibility: 'UNLISTED' }), viewer(), INELIGIBLE)).toBe(
+      QuestAccess.HIDDEN,
+    );
+  });
+
+  it('does not hide an ineligible owner Quest from that owner or from support staff', () => {
+    // Concealment is from the public, not from the author — who must still be able to see and fix
+    // their own work — and not from moderation, which has to be able to look at what it withdrew.
+    expect(questAccessFor(quest(), viewer({ accountId: OWNER }), INELIGIBLE)).toBe(
+      QuestAccess.OWNER,
+    );
+    expect(questAccessFor(quest(), viewer({ canViewSupport: true }), INELIGIBLE)).toBe(
       QuestAccess.OWNER,
     );
   });
@@ -162,6 +193,7 @@ describe('accept eligibility', () => {
     quest: quest(),
     eligibility: eligibility(),
     publishedMinimumAgeBand: 'TEEN_13_15' as const,
+    ownerEligible: ELIGIBLE,
     now: NOW,
   };
 
@@ -230,6 +262,10 @@ describe('accept eligibility', () => {
     ['a suspended Quest', { quest: quest({ state: QuestState.SUSPENDED }) }],
     ['an archived Quest', { quest: quest({ state: QuestState.ARCHIVED }) }],
     ['a PRIVATE Quest', { quest: quest({ visibility: 'PRIVATE' }) }],
+    // Acceptance must answer exactly as the read endpoint does, so an ineligible owner's Quest is
+    // "not found" here too — never "not eligible: OWNER_SUSPENDED" (audit P02-41).
+    ['a Quest whose owner is ineligible', { ownerEligible: INELIGIBLE }],
+    ['a Quest whose owner state could not be established', { ownerEligible: false }],
     [
       'an age-gated Quest below the viewer band',
       {
@@ -264,7 +300,7 @@ describe('accept eligibility', () => {
     // published band is what governs, and it hides the Quest from a 16-year-old entirely.
     const questRow = quest({ publishedMinimumAgeBand: 'ADULT' });
     const teen = viewer({ ageBand: 'TEEN_16_17' });
-    expect(questAccessFor(questRow, teen)).toBe(QuestAccess.HIDDEN);
+    expect(questAccessFor(questRow, teen, ELIGIBLE)).toBe(QuestAccess.HIDDEN);
     const result = evaluateAcceptEligibility({
       ...base,
       quest: questRow,

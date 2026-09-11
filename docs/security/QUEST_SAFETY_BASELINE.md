@@ -61,8 +61,27 @@ non-PII `rationale`.
 | 06 AI            | `classifyQuestSafety` behind the gateway with `FAIL_CLOSED` fallback; eval corpus                                                                                                |
 | 14 T&S hardening | Versioned policy taxonomy, moderator queues, appeals, sanctions, transparency reports, adversarial test corpus, FP/FN measurement                                                |
 
+## A sanction on an author is a sanction on their content
+
+Assessments judge content; suspensions judge accounts. Phase 02's gate did the first thoroughly and
+the second not at all, so suspending an author left their instructions public and acceptable
+(audit P02-41). The rule, from the Phase 02 gate remediation onward:
+
+- content is public only while its author's account is eligible to have public content, and whether
+  a given lifecycle state means that is **Identity's** judgement, asked per request through
+  `OWNER_ELIGIBILITY` (ADR-014) — no context re-derives it and nothing caches it;
+- an answer that cannot be established is not permission, and conceals;
+- concealment is a 404 that names no account, no state and no reason — an explained concealment is
+  an oracle;
+- the author keeps sight of their own work and moderation keeps sight of what it withdrew;
+- a participant already in flight can always `cancel`, and can advance no further;
+- returning to good standing restores visibility **only** where the Quest's own ADR-013 proof is
+  still valid. Reinstatement is not an amnesty for a rejected, stale, suspended, archived or erased
+  Quest.
+
 ## Non-negotiables
 
 Never encourage dangerous, illegal, humiliating, exploitative, self-harm-related, sexual or reckless
 challenges (CLAUDE.md). Safety overrides growth incentives. Minors and precise location get elevated
-controls (see `docs/security/PRIVACY_PRINCIPLES.md`).
+controls (see `docs/security/PRIVACY_PRINCIPLES.md`). A sanction that does not reach the sanctioned
+person's content is not a sanction.

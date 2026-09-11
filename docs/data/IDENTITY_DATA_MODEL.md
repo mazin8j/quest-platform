@@ -52,6 +52,32 @@ it receives the age band and verified flag through the `Principal`.
 - **Blocks**: composite PK `(blocker, blocked)`, `CHECK blocker <> blocked`, reverse index for "who blocked me".
 - **Audit ledger**: `jsonb` metadata restricted by the application to low-cardinality primitives; no PII beyond ids.
 
+## What other contexts may ask about an account
+
+Identity exports exactly two read ports, and the distinction between them is load-bearing.
+
+| Port                | Question it answers                     | Why it exists                                                                                                                                                                                                                    |
+| ------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACCOUNT_FACTS`     | "What state is this account in?"        | Callers that must render or record the fact itself (the publish gate reports an inactive or unverified owner as a machine-readable blocker).                                                                                     |
+| `OWNER_ELIGIBILITY` | "May this account's content be public?" | Callers that need the **policy**, not the fact. Handing a caller a state invites it to write its own rule over it, which is how a lifecycle rule ends up duplicated in three contexts. This port answers the question (ADR-014). |
+
+`OWNER_ELIGIBILITY` offers `isPublicationEligible(id)` and `publicationEligibilityFor(ids)`. The
+batch form is part of the contract, not an optimisation: a consumer paging a feed would otherwise
+make account state an N+1 on its hottest read, and the first person to notice would fix it with a
+denormalised copy of a column Identity owns. Two rules bind every consumer:
+
+- an id absent from the returned map is **ineligible**, and
+- a lookup that fails is **ineligible** — an unanswered question is never permission.
+
+The eligible set is `ACTIVE` and nothing else (`PUBLICATION_ELIGIBLE_STATES`). An unknown state is
+ineligible, so a lifecycle state added here conceals content until somebody decides otherwise.
+Widening that set is a safety decision, not a refactor.
+
+No context reads `account` directly; `pnpm deps:check` forbids importing Identity persistence, and
+only the port token and its types cross the boundary. Note that `profile.account_active` is a
+different mechanism for a different purpose — a mirror Identity itself maintains inside its own
+transactions so _public profile reads_ need no join — and is not a substitute for asking this port.
+
 ## Deletion cascade (account deletion request architecture)
 
 1. `POST /v1/me/deletion-request` (re-authenticated) → `account_deletion_request` PENDING with `scheduled_for = now + 30 days`; state `DELETION_REQUESTED`; profile hidden; other sessions revoked; e-mail notice; event `identity.account.deletion-requested`.
@@ -67,6 +93,15 @@ it receives the age band and verified flag through the `Principal`.
 6. Retained on purpose (legal basis, ids only): `consent_record`, `account_role` history, `identity_audit_ledger`, `account_deletion_request`, and — from Phase 02 — `quest_audit_ledger` and `quest_safety_assessment`. Both carry ids, enums and lexicon-derived text only; see `docs/data/QUEST_DATA_MODEL.md`.
 
 Idempotency: a completed request or a non-`DELETION_REQUESTED` account is skipped; re-running the job is safe (INT "requests, cancels and finally executes…").
+
+Content visibility during and after the grace period needs no step of its own, and deliberately has
+none. `DELETION_REQUESTED` is outside `PUBLICATION_ELIGIBLE_STATES`, so the moment the request is
+recorded the account's published content is concealed everywhere by the port above — the grace period
+exists so the _user_ can change their mind, not so their content stays publicly actionable while they
+decide. Cancelling the request restores the previous state, and with it the visibility of every Quest
+whose own publication proof is still valid; a Quest suspended, archived or left with a stale approval
+meanwhile stays concealed by its own gate (ADR-013, ADR-014). Staff suspension during the grace
+period pauses the deletion job and keeps the content concealed for the other reason as well.
 
 ## User-data export contract
 

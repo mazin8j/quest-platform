@@ -155,12 +155,20 @@ Residual items from the gate audit. Its 2 P0 and 5 P1 findings were repaired on 
 regression tests proven to fail before each repair; these are the P2/P3 remainder plus the one P1
 deliberately deferred.
 
-- TD-48 **P02-41 (P1, deferred — gate condition A2).** Suspending or deactivating an account leaves
-  every Quest it already published fully live: account state is checked when publishing but by no
-  read path, and `AccountSuspended` has no consumer. Staff must then suspend each Quest by id, and
-  there is no list-by-owner endpoint to find them. Needs an ADR choosing between an event consumer,
-  a denormalised `owner_active` column, and a port call per read — each with different consistency
-  and performance consequences. Required before public sign-up.
+- TD-48 **P02-41 (P1) — RESOLVED 2026-09-11** (`audit(P02-41)`, gate condition A2 discharged).
+  Suspending or deactivating an account left every Quest it had already published fully live:
+  account state was checked when publishing but by no read path. Resolved by **ADR-014**, which
+  chose the synchronous Identity query port over the event consumer (unreliable without a
+  transactional outbox), the denormalised column (write amplification whose partially-applied state
+  is a partially-applied sanction) and the hybrid (correct shape, not buildable yet). Identity now
+  exports `OWNER_ELIGIBILITY` with a batch method; Quest Core conceals ineligible owners' Quests
+  from detail, discovery and acceptance as a 404, refuses `start` and `completion-request` with the
+  same 409 an unpublished Quest gives, and leaves `cancel` open. Reactivation restores visibility
+  only where the Quest's own ADR-013 proof is still valid. Eleven regression tests (8 integration,
+  3 unit), each proven to fail before the repair by reverting the three enforcement points
+  individually. The list-by-owner staff endpoint that finding also mentioned is **not** part of this
+  repair and is no longer needed for the sanction to work — it is now only a staff convenience, and
+  is carried forward as TD-59.
 - TD-49 **P02-43 (gate condition A5).** `effectiveCountryRules` fails _open_ on disjoint
   allow-lists: declared `['FR']` ∩ assessment `['DE']` = `[]`, and an empty allow-list means "no
   restriction", so the Quest becomes acceptable worldwide. Latent only because the Phase 02 engine
@@ -203,9 +211,32 @@ deliberately deferred.
   implemented — the Quest's location is stored, hashed and assessed but constrains nothing, since
   acceptance is gated on the viewer's country against the owner's lists. Discovery pagination can
   still end early after `MAX_DISCOVERY_PASSES`. And the Phase 02 execution report's test and
-  operation counts (275, 67) do not match the reproducible figures (283, 68).
+  operation counts (275, 67) do not match the reproducible figures (283, 68). The
+  `MAX_DISCOVERY_PASSES` half of this is now under slightly more pressure: the TD-48 repair filters
+  ineligible owners in the same refill loop, so a page can be shortened by two independent causes
+  instead of one. Correctness is unaffected (the cursor still advances over every row considered);
+  what can happen is an early `hasMore: false` for a viewer whose visible catalogue is unusually
+  sparse. The fix is the same one this item already wants — filter in SQL rather than after it.
+
+- TD-59 **Staff list-by-owner endpoint (from P02-41, split out 2026-09-11).** With TD-48 resolved,
+  a suspended owner's Quests are concealed automatically, so staff no longer _need_ to find and
+  suspend each one by id for the sanction to take effect. What is still missing is the ability to
+  enumerate one account's Quests for a moderation case — reviewing what an author published, or
+  taking a permanent per-Quest action that should survive their reinstatement. Wants the existing
+  `VIEW_QUEST_SUPPORT` permission and the audit ledger entry every support read should leave.
 
 ### Should fix
+
+- TD-60 **`pnpm audit --audit-level=high` now fails on `multer` (observed 2026-09-11).** Three high
+  advisories (incl. GHSA-535w-7cp7-47q4, DoS via crafted multipart, file-descriptor leak and
+  oversized array) against `multer@2.2.0`, reached only transitively through
+  `@nestjs/platform-express@12.0.1`; patched in `>=2.3.0`. Neither `package.json` nor
+  `pnpm-lock.yaml` changed in the TD-48 remediation, so this is a newly published advisory against
+  an unchanged dependency set, not a regression. Not currently reachable — the API registers no
+  `FileInterceptor` and accepts no multipart upload anywhere (Phase 05 media goes direct to object
+  storage, ADR-005) — but it fails the mandatory gate command and must be closed by a
+  `@nestjs/platform-express` bump or a lockfile override before the next gate, not risk-accepted by
+  default.
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
   GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via
