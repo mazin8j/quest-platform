@@ -24,6 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <nav className="q-nav" aria-label="Primary">
             <Link href="/">Overview</Link>
             <Link href="/accounts">Accounts</Link>
+            <Link href="/quests">Quests</Link>
             <Link href="/sign-in">Sign in</Link>
             <form method="post" action="/api/auth/sign-out" className="q-inline-form">
               <button type="submit" className="q-link-button">

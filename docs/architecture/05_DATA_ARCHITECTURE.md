@@ -2,9 +2,36 @@
 
 ## Platform (exists)
 
-- PostgreSQL 16 is the system of record (ADR-002). Local: `docker compose` builds
-  `infrastructure/docker/postgres` (postgis/postgis:16-3.4 + `postgresql-16-pgvector`). Cloud: RDS
-  module with `rds.force_ssl=1`, encrypted storage, RDS-managed master secret.
+- PostgreSQL 16 is the system of record (ADR-002). Local and CI: `docker compose` builds
+  `infrastructure/docker/postgres` from **`postgres:16-bookworm`** (the official image on Debian 12),
+  adding `postgresql-16-postgis-3`, `postgresql-16-postgis-3-scripts` and `postgresql-16-pgvector`
+  from the PGDG repository the base image already has configured and signed. Cloud: RDS module with
+  `rds.force_ssl=1`, encrypted storage, RDS-managed master secret.
+
+  The base was `postgis/postgis:16-3.4` until 2026-09-12. That image is Debian 11 (bullseye); once
+  the `bullseye-security` Release metadata expired, `apt-get update` inside the build failed its
+  validity check and the image stopped building, so CI failed on the base image rather than on
+  anything in this repository. `postgis/postgis:16-3.5` is not a fix — it is still
+  `FROM postgres:16-bullseye` upstream — and the `16-3.4` variant no longer exists upstream at all.
+  The fix is the supported Debian release, never an APT override: `Acquire::Check-Valid-Until=false`,
+  `--allow-unauthenticated`, `apt-key` and unsigned repositories are all forbidden here, because a
+  build that skips signature validation is a build that installs whatever answers the request.
+
+  Extension packages are versioned to the server's major (`postgresql-16-*`): Debian 12's own archive
+  carries PostgreSQL 15, so an unversioned name would install the wrong build or a second server. The
+  image asserts at build time that `postgis.control` and `vector.control` are present under
+  `pg_config --sharedir`, so a renamed or dropped package fails the build instead of failing a
+  migration. `postgresql-16-postgis-3-scripts` is required rather than optional: it supplies the
+  extension control and upgrade SQL, including the `update-alternatives` link that makes the
+  unversioned `CREATE EXTENSION postgis` resolve.
+
+  The image ships **no** `/docker-entrypoint-initdb.d` script. `postgis/postgis` shipped one that
+  created the extension in `template1` and in `POSTGRES_DB`, which meant every database inherited
+  PostGIS before migration `0000` ran, and that migration's own work was never exercised. Extension
+  creation has one owner — the migration — so local, CI and cloud converge through the same code
+  path; the integration harness creates each per-suite database and runs `migrateUp` against it, and
+  depends on nothing in the template.
+
 - Extensions enabled by migration `0000_platform_extensions`: `postgis`, `vector`; helper trigger
   function `quest_set_updated_at()` for audit columns.
 - Access: `drizzle-orm/node-postgres` over a `pg` Pool (`DATABASE` token), pool max from config,

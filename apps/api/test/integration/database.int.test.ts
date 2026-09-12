@@ -7,10 +7,15 @@
  * cannot race the suites running beside it — and so the "EMPTY DATABASE is a supported starting
  * point" invariant is exercised literally, on a database created seconds earlier.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { Table, getTableName, is } from 'drizzle-orm';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { migrateUp, migrationStatus } from '../../src/cli/migrate';
+import * as schema from '../../src/infrastructure/database/schema';
 import { provisionSuiteDatabase, suiteDatabaseName } from './helpers/test-database';
 
 const enabled = process.env.RUN_INTEGRATION === 'true';
@@ -104,6 +109,7 @@ describe.skipIf(!enabled)('database migrations against a real PostgreSQL', () =>
       expect(status.applied.map((a) => a.tag)).toEqual([
         '0000_platform_extensions',
         '0001_identity_profiles',
+        '0002_quest_core',
       ]);
       const tables = await pristine.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
@@ -118,5 +124,87 @@ describe.skipIf(!enabled)('database migrations against a real PostgreSQL', () =>
     } finally {
       await pristine.end();
     }
+  });
+
+  /**
+   * Schema-mirror parity (audit P02-15).
+   *
+   * The hand-authored SQL is the source of truth, but drizzle-kit computes its next snapshot from
+   * the TypeScript mirror. A mirror that omits an index or a CHECK makes the next `generate` emit
+   * a DROP for it — which is how the publication gate could disappear from the database without
+   * anyone editing a migration. This test compares what the mirror declares against what the
+   * migrated database actually has, so the two cannot drift silently.
+   */
+  it('keeps the Drizzle schema mirror in step with the migrated database', async () => {
+    const tables = await client?.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name LIKE 'quest%'
+         AND table_name NOT IN ('quest_migrations')
+       ORDER BY table_name`,
+    );
+    const declaredTables = new Set(
+      Object.values(schema)
+        .filter((t) => is(t, Table))
+        .map((t) => getTableName(t)),
+    );
+    for (const row of tables?.rows ?? []) {
+      expect(declaredTables, `${row.table_name} is missing from the schema mirror`).toContain(
+        row.table_name,
+      );
+    }
+
+    // Every constraint and index the Quest migration creates must be described by the mirror, so
+    // a regenerated snapshot cannot drop it.
+    //
+    // Matched against the mirror's CODE, not its raw text. Substring-matching the whole file let
+    // the check pass on a name that appears only in the file's own header comment: deleting the
+    // `check('quest_published_requires_assessment', ...)` call left the docblock mention behind
+    // and the test still passed, so the one object it exists to protect was unprotected
+    // (audit P02-40). Comments are stripped and the name must appear as a `check('name'` /
+    // `index('name'` / `uniqueIndex('name'` declaration.
+    const rawSource = readFileSync(
+      path.join(__dirname, '../../src/infrastructure/database/schema/quests.ts'),
+      'utf8',
+    );
+    const source = rawSource
+      .replace(/\/\*[\s\S]*?\*\//g, '') // block comments, including the file header
+      .replace(/\/\/.*$/gm, ''); // line comments
+    const declares = (kind: string, name: string): boolean =>
+      new RegExp(`${kind}\\(\\s*'${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`).test(source);
+
+    const constraints = await client?.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint c
+       JOIN pg_class t ON t.oid = c.conrelid
+       WHERE t.relname LIKE 'quest%' AND c.contype = 'c'
+       ORDER BY conname`,
+    );
+    // Guard against a vacuous pass: the migration creates exactly 14 CHECKs and 13 indexes.
+    expect(constraints?.rows.length ?? 0).toBe(14);
+    for (const row of constraints?.rows ?? []) {
+      expect(
+        declares('check', row.conname),
+        `CHECK ${row.conname} is not declared in the schema mirror`,
+      ).toBe(true);
+    }
+    const indexes = await client?.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename LIKE 'quest%'
+         AND indexname NOT LIKE '%_pkey' AND tablename <> 'quest_migrations'
+       ORDER BY indexname`,
+    );
+    expect(indexes?.rows.length ?? 0).toBe(13);
+    for (const row of indexes?.rows ?? []) {
+      expect(
+        declares('index', row.indexname) || declares('uniqueIndex', row.indexname),
+        `index ${row.indexname} is not declared in the schema mirror`,
+      ).toBe(true);
+    }
+
+    // The one object the mirror cannot express (a circular table-level foreign key) is asserted
+    // directly, so "documented in a comment" is backed by a check.
+    const fk = await client?.query(
+      `SELECT 1 FROM pg_constraint WHERE conname = 'quest_published_assessment_fk'`,
+    );
+    expect(fk?.rowCount, 'quest_published_assessment_fk must exist').toBe(1);
   });
 });

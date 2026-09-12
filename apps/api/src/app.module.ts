@@ -9,6 +9,7 @@ import { MetricsModule } from './common/observability/metrics.module';
 import { APP_CONFIG, type AppConfig } from './config/app-config';
 import { AppConfigModule } from './config/config.module';
 import { HealthModule } from './health/health.module';
+import { AccountErasureModule } from './infrastructure/account-erasure';
 import { AiModule } from './infrastructure/ai/ai.module';
 import { DataExportModule } from './infrastructure/data-export/data-export.module';
 import { DatabaseModule } from './infrastructure/database/database.module';
@@ -17,6 +18,7 @@ import { ObjectStorageModule } from './infrastructure/object-storage/object-stor
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { IdentityModule } from './modules/identity';
 import { ProfilesModule } from './modules/profiles';
+import { QuestsModule } from './modules/quests';
 import { SystemModule } from './modules/system';
 import { TrustSafetyModule } from './modules/trust-safety';
 
@@ -57,12 +59,14 @@ import { TrustSafetyModule } from './modules/trust-safety';
     EventsModule,
     AiModule,
     DataExportModule,
+    AccountErasureModule,
     HealthModule,
     // ---- domain modules ----
     SystemModule,
     TrustSafetyModule,
     ProfilesModule,
     IdentityModule,
+    QuestsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ApiExceptionFilter },

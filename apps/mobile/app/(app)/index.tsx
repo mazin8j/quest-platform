@@ -8,7 +8,7 @@ import { Screen } from '../../src/components/Screen';
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { spacing, typography, useTheme } from '../../src/theme';
 
-/** Phase 01 home: the signed-in profile card and entry points to settings. Quests arrive in Phase 02. */
+/** Home: the signed-in profile card, Quest entry points and settings. */
 export default function HomeScreen() {
   const t = useTheme();
   const { state, store } = useAuth();
@@ -30,6 +30,12 @@ export default function HomeScreen() {
         {profile ? `${profile.interests.length} interests selected` : ''}
       </Text>
       <View style={styles.links}>
+        <Link href="/(app)/quests" style={[styles.link, { color: t.primary }]}>
+          Discover Quests
+        </Link>
+        <Link href="/(app)/quests/mine" style={[styles.link, { color: t.primary }]}>
+          My Quests
+        </Link>
         <Link href="/(app)/settings/privacy" style={[styles.link, { color: t.primary }]}>
           Privacy settings
         </Link>

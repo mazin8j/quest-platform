@@ -2,24 +2,24 @@
 
 ## Bounded contexts and ownership
 
-| Context                         | Owns (data)                                                                | Phase    | Phase 00 artefact                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| Identity                        | accounts, credentials, sessions, devices, roles, consents, deletion/export | 01 ✅    | `modules/identity` — exports `PRINCIPAL_RESOLVER`, `AccountDeletionJob`, `DataExportService` |
-| Profiles                        | public profile, interests/onboarding, privacy settings, blocks             | 01 ✅    | `modules/profiles` — exports `PROFILE_PROVISIONER`, `PROFILE_QUERY`, `BLOCK_QUERY`           |
-| Quest                           | quest definitions, versions, categories, safety state ref                  | 02       | `SafetyAssessment` contract                                                                  |
-| Participation                   | acceptance/progress state machine                                          | 02       | —                                                                                            |
-| Proof                           | evidence references, verification records                                  | 05       | `analyzeProof` capability shape                                                              |
-| Gamification / Quest Passport   | XP ledger, badges, levels, streaks                                         | 04       | —                                                                                            |
-| Social Graph                    | follows, blocks, mutes, comments, reactions                                | 03       | —                                                                                            |
-| Crews                           | crews, membership, roles                                                   | 09       | —                                                                                            |
-| Feed / Discovery                | ranking inputs and outputs                                                 | 07       | `rankRecommendations` shape                                                                  |
-| Notifications                   | preferences, delivery log                                                  | 01+      | —                                                                                            |
-| Location                        | coarse/precise location policy, geo entities                               | 08       | classification rules (docs)                                                                  |
-| Creators / Brands / World Quest | creator status, campaigns, world quests                                    | 11/13/10 | —                                                                                            |
-| Trust & Safety / Moderation     | assessments, cases, appeals, sanctions                                     | 00/02/14 | `trust-safety` module, fail-closed                                                           |
-| Analytics                       | event taxonomy, consent-gated sinks                                        | 15       | `@quest/analytics` contract                                                                  |
-| AI Intelligence                 | tasks, prompts, invocation audit                                           | 06       | `@quest/ai` contracts                                                                        |
-| System                          | build/version info                                                         | 00       | `system` module                                                                              |
+| Context                         | Owns (data)                                                                | Phase    | Phase 00 artefact                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Identity                        | accounts, credentials, sessions, devices, roles, consents, deletion/export | 01 ✅    | `modules/identity` — exports `PRINCIPAL_RESOLVER`, `ACCOUNT_FACTS`, `OWNER_ELIGIBILITY`, `AccountDeletionJob`, `DataExportService` |
+| Profiles                        | public profile, interests/onboarding, privacy settings, blocks             | 01 ✅    | `modules/profiles` — exports `PROFILE_PROVISIONER`, `PROFILE_QUERY`, `BLOCK_QUERY`                                                 |
+| Quest                           | quest definitions, versions, categories, safety state ref                  | 02       | `SafetyAssessment` contract                                                                                                        |
+| Participation                   | acceptance/progress state machine                                          | 02       | —                                                                                                                                  |
+| Proof                           | evidence references, verification records                                  | 05       | `analyzeProof` capability shape                                                                                                    |
+| Gamification / Quest Passport   | XP ledger, badges, levels, streaks                                         | 04       | —                                                                                                                                  |
+| Social Graph                    | follows, blocks, mutes, comments, reactions                                | 03       | —                                                                                                                                  |
+| Crews                           | crews, membership, roles                                                   | 09       | —                                                                                                                                  |
+| Feed / Discovery                | ranking inputs and outputs                                                 | 07       | `rankRecommendations` shape                                                                                                        |
+| Notifications                   | preferences, delivery log                                                  | 01+      | —                                                                                                                                  |
+| Location                        | coarse/precise location policy, geo entities                               | 08       | classification rules (docs)                                                                                                        |
+| Creators / Brands / World Quest | creator status, campaigns, world quests                                    | 11/13/10 | —                                                                                                                                  |
+| Trust & Safety / Moderation     | assessments, cases, appeals, sanctions                                     | 00/02/14 | `trust-safety` module, fail-closed                                                                                                 |
+| Analytics                       | event taxonomy, consent-gated sinks                                        | 15       | `@quest/analytics` contract                                                                                                        |
+| AI Intelligence                 | tasks, prompts, invocation audit                                           | 06       | `@quest/ai` contracts                                                                                                              |
+| System                          | build/version info                                                         | 00       | `system` module                                                                                                                    |
 
 ## Interaction patterns
 
@@ -48,6 +48,13 @@ Rules (normative, enforced by dependency-cruiser where mechanical):
 4. Every state transition that affects safety, rewards or visibility is recorded append-only
    (assessments, ledgers, verification records), never mutated in place.
 5. Quest publication requires a fresh, publishable `SafetyAssessment` (see 10_TRUST_SAFETY).
+6. Content stays public only while its **author's account** is eligible for it. Whether a given
+   account lifecycle state means that is Identity's judgement, asked through `OWNER_ELIGIBILITY`
+   and never re-derived by the consuming context (ADR-014). A consumer that handles more than one
+   row per request must use the port's batch method: account state is never an N+1.
+7. A lifecycle answer that cannot be established is _not permission_. Every cross-context
+   authorisation read fails closed, and concealment is a 404 that says nothing about the account
+   behind it — never a 403 whose status code confirms what it refuses to name.
 
 The quest lifecycle (`quest-domain` skill) — discover → accept → start → perform → submit proof →
 verify → reward → share/challenge — spans Quest, Participation, Proof, Gamification and Social and

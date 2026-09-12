@@ -135,6 +135,24 @@ Verification and password-reset codes are printed by the `log` mailer when `AUTH
 (never in production). Provider sign-in locally: `provider: "FAKE"`, `idToken: "fake:<subject>:<email>"`.
 Staff sign in to the admin console (http://localhost:3001/sign-in) with an account that holds a staff role.
 
+## Quests (Phase 02)
+
+```bash
+# .env: QUEST_ASSESSMENT_MAX_AGE_DAYS (default 30), QUEST_MAX_ACTIVE_PER_OWNER (default 50)
+pnpm --filter @quest/api quests:process-expiries   # expire attempts past their completion window
+```
+
+A Quest becomes visible only through `POST /v1/quests/:id/publish`, and only after
+`POST /v1/quests/:id/assessment` has recorded a publishable decision about that exact content. A
+refusal is a 409 whose body lists machine-readable blockers — `NO_SAFETY_ASSESSMENT`,
+`SAFETY_ASSESSMENT_STALE`, `CONTENT_HASH_MISMATCH` and the rest are documented in
+`docs/api/QUEST_API.md`. Editing a safety-relevant field changes the content hash, which
+unpublishes the Quest and voids the approval by design (ADR-013).
+
+The expiry sweep is idempotent; a scheduled worker replaces the command with the first deployment
+(BACKLOG TD-21). Staff Quest support lives at http://localhost:3001/quests and needs
+`VIEW_QUEST_SUPPORT` (SUPPORT, MODERATOR, TRUST_SAFETY_LEAD, SUPER_ADMIN).
+
 ## Run
 
 ```bash

@@ -2,12 +2,254 @@
 
 ## Current Phase
 
-Phase 01 — Identity & Profiles (branch `phase-01-identity`, 2026-09-06 — **independent gate audit
-completed: PASS WITH CONDITIONS, 86/100**, `docs/governance/PHASE_GATE_AUDIT_PHASE_01_2026-09-06.md`).
-Not merged into `main`. Phase 02 is authorized by that audit **only after condition C1-P01** (CI
-observed green for this branch) is satisfied.
+Phase 02 — Quest Core (branch `phase-02-quest-core`, 2026-09-08 — **gate audit run by the
+implementing session: PASS WITH CONDITIONS, 79/100**,
+`docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`; its last open P1, P02-41 / TD-48, was
+remediated 2026-09-11 under ADR-014 and recorded in §7 of that report — **open P0: 0, open P1: 0**).
+Not merged into `main`. Phase 03 is **not** authorized: condition A1 requires an independent
+re-audit by a session with no implementation history, because neither the audit that produced that
+verdict nor the remediation that closed its last finding was independent. The prompt is
+`docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md`.
 
 ## Status
+
+**Phase 02 — implemented (2026-09-07), gate audit pending.** Entry conditions were confirmed from
+repository evidence before any change: branch `phase-02-quest-core`, clean tree, Phase 01 baseline
+`main` (`e0f1d4d`) an ancestor of HEAD, Phase 01 merged into `main` through PR #1, and no open
+Phase 00/01 P0 or P1.
+
+The phase implements the authoritative Quest lifecycle — draft, safety assessment, publication,
+archive, staff sanction, unranked discovery, and participation through to proof-required completion.
+Its defining decision is ADR-013: an approval belongs to content, not to a Quest id. Publication is
+refused unless three independent layers agree — the shared Trust & Safety rule
+(`canPublishWithAssessment`), the domain gate (`evaluatePublish`, which returns machine-readable
+blockers), and the database CHECK `quest_published_requires_assessment`, which no code path,
+migration or manual `UPDATE` can circumvent. A safety-relevant edit rehashes the content, which
+makes the previous approval stale by definition, takes the Quest out of visibility and cancels the
+attempts accepted under it.
+
+Phase 01 boundaries are enforced mechanically: a dependency-cruiser rule forbids the Quest context
+from reading identity or profile tables, owner facts arrive through the Identity-owned
+`ACCOUNT_FACTS` port, no date of birth enters the context, and anything a caller may not know about
+answers 404 rather than 403. Account-lifecycle obligations are wired rather than promised: a new
+account-erasure registry runs every context's erasure inside the Identity deletion transaction and
+refuses to run at all if a required contributor has not registered.
+
+**Four independent adversarial reviews found 4 P0 and 20 P1 defects.** All 24 were repaired on the
+branch with regression tests (the `fix(quests)` commit), together with the P2 items whose fix was small and
+whose risk was real. The P0s were: a PRIVATE Quest acceptable by anyone who knew its id; safety
+country restrictions recorded and never enforced; owner cards leaking non-PUBLIC profiles — including
+13-15s, who can never be PUBLIC — to anonymous callers; and owner free text surviving erasure inside
+a JSONB blob. Details and the full table are in
+`docs/governance/PHASE_02_EXECUTION_REPORT_2026-09-07.md`. Residual P2 items are TD-37…TD-47.
+
+Deliberately not built, and forbidden by a dependency rule so it stays that way: XP, badges,
+leaderboards, followers or any social graph, crews, World Quest, the creator platform, brand
+monetization, AI Quest generation, recommendation or ranking, and evidence verification.
+Participation ends at `COMPLETION_REQUESTED`.
+
+### Validations executed (Phase 02, 2026-09-07, after the review repairs)
+
+| Check                                                                | Result                                                        |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`                                     | PASS                                                          |
+| `pnpm verify`                                                        | PASS — 17/17 tasks; **275** unit tests across 12 workspaces   |
+| `pnpm deps:check` (incl. two new Quest boundary rules)               | PASS — 0 violations, 246 modules, 588 dependencies            |
+| Integration + E2E on real PostgreSQL 16 + PostGIS + pgvector + Redis | PASS — **71** tests (35 Quest integration, 2 SDK journeys)    |
+| Clean-database migration → status → apply → status → apply again     | PASS — 3 applied, 0 pending, idempotent                       |
+| Drizzle mirror vs migrated database                                  | PASS — every index and CHECK present in both                  |
+| OpenAPI regenerate + `git diff`                                      | PASS — no drift; 67 operations                                |
+| Builds (packages, api, web, admin)                                   | PASS                                                          |
+| `pnpm audit --audit-level=high` / secret scan                        | PASS — same posture as Phase 01 (TD-17 exception); no secrets |
+| Expo export, CI across the six mandatory jobs                        | **Not yet run** — required before the gate closes             |
+
+### Gate audit 2026-09-08 (implementer-conducted — see condition A1)
+
+Found **2 P0 and 5 P1** still live after the implementation review claimed all P0/P1 were repaired.
+Three of them (P02-35, P02-36, P02-39) were introduced or left half-finished _by_ that round of
+repairs — the signature of a review that verified its fixes existed rather than that they were
+complete.
+
+- **P02-34 (P0)** — erasure silently stopped after 5,000 Quests and reported success; reproduced
+  with 240 Quests surviving a "completed" deletion. Now fails loudly and rolls back.
+- **P02-35 (P0)** — owner and staff free text survived erasure in `quest_audit_ledger.metadata`,
+  introduced by the P02-23 repair. Now redacted in both directions.
+- **P02-36 (P1)** — a sanction against the erased owner's own Quest was never cleared.
+- **P02-37 (P1)** — an owner could bury a staff sanction by re-assessing a suspended Quest,
+  defeating the P02-10 repair.
+- **P02-38 (P1)** — `evidence.notes` and `location.label` were hashed and shown to participants but
+  never assessed.
+- **P02-39 (P1)** — Quest owner cards leaked non-PUBLIC profiles, including 13-15s, to any
+  signed-in caller; introduced by the P02-03 repair.
+- **P02-40 (P1)** — the schema-parity test matched the constraint name inside the file's own header
+  comment, so it passed with the publication gate's CHECK deleted from the mirror.
+
+All repaired with regression tests, each proven to fail before its repair. **P02-41** (a suspended
+owner's published Quests stay live) was accepted and deliberately not repaired at the time: it
+needed a cross-context ADR. Residual P2/P3 are P02-42…P02-57.
+
+### Gate remediation — P02-41 / TD-48 (2026-09-11, commit `audit(P02-41)`)
+
+**Condition A2 is discharged.** The defect was reproduced first: eight integration tests written
+against the unmodified branch, six failing on a real database — a suspended, deactivated or
+deletion-requested owner's published Quests were readable, listed in discovery, and could be started
+and submitted for completion.
+
+**ADR-014** evaluates an event consumer, a denormalised flag, a synchronous port and a hybrid, and
+chooses the **synchronous Identity query port**: without a transactional outbox an event consumer
+fails open on a dropped message, which is the wrong direction for a safety sanction, and a
+denormalised flag turns suspending a prolific author into a write amplification whose
+partially-applied state is a partially-applied sanction. Identity now exports `OWNER_ELIGIBILITY`
+with a batch method; Quest Core asks and never interprets an account state, so it contains no
+lifecycle vocabulary at all and `deps:check` is unchanged at 0 violations.
+
+Behaviour: an ineligible owner's Quest is a **404** everywhere (never a 403, and carrying no account
+state, owner metadata or reason), absent from discovery via one batched lookup per refill pass (no
+N+1, page size and cursor unaffected), and cannot be accepted. `start` and `completion-request`
+return 409 with the same message an unpublished Quest gives, word for word; **`cancel` stays open**,
+so nobody is trapped in an attempt by someone else's suspension. A failed lookup is ineligible and
+increments `quest.core.owner_eligibility_unavailable`. Reactivation restores visibility only where
+the Quest's own ADR-013 proof is still valid. Eleven regression tests (8 integration, 3 unit), each
+proven to fail by reverting the three enforcement points individually against the full suite.
+
+### Remaining P0 / P1 blockers
+
+None on the branch after the P1 remediation above: **open P0 = 0, open P1 = 0**, and no mandatory gate
+command failing. Note that the 2026-09-12 delta audit recorded 3 open P1 and a gate verdict of FAIL;
+those three are the ones repaired above, and **only a fresh independent audit can retire that
+verdict** — this session repaired the defects and cannot certify its own repairs. Open conditions: **A1 independent re-audit**
+(binding, blocks Phase 03 — unaffected by the remediation, which this same session wrote), A3 CI
+green, A4 developer-machine reproduction, A5 country allow-list before Phase 06, A6 Phase 01's
+carried conditions. A2 is discharged.
+
+### TD-60 — `multer` advisories, raised and closed the same day (2026-09-11, commit `fix(deps)`)
+
+`pnpm audit --audit-level=high` began failing on four advisories against `multer@2.2.0` (three high
+— GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4 — and one low,
+GHSA-qvfw-j98x-7q72), on the single path `apps/api → @nestjs/platform-express@12.0.1 → multer`. The
+lockfile was untouched by the TD-48 work, so this was a newly published advisory set against an
+unchanged tree.
+
+Not reachable: no `FileInterceptor`, `MulterModule`, multipart parser or upload route exists
+anywhere, and `apps/api` imports only the `NestExpressApplication` type. The code loads but the
+parser never runs, because no multer middleware is mounted.
+
+**Repaired rather than risk-accepted.** `12.0.1` is the latest `@nestjs/platform-express` and pins
+multer to exactly `2.2.0`, so a parent upgrade was unavailable and an override was the only route
+to the patch. `2.2.0 → 2.3.0` is semver-minor and QUEST calls none of multer's API, so the
+compatibility surface is empty. `pnpm-workspace.yaml` carries the override with its reasoning
+inline; the lockfile diff is ten lines. `pnpm audit --audit-level=high` exits 0 again, and
+`apps/api/test/dependency-pins.test.ts` fails in the ordinary unit run if the override is ever
+lost — proven by removing it. §8 of the gate-audit report has the detail.
+
+**No mandatory gate command is now failing.**
+
+### Final delta audit P1 remediation (2026-09-12)
+
+The independent-format delta audit found 3 P1 defects — one in the P02-41 remediation, two in the
+original publication gate. All three are repaired on this branch; the audit report itself is not
+rewritten.
+
+**P1-1, discovery stranded the catalogue** (TD-63). A run of concealed rows longer than the scan budget
+reported end-of-feed; 0 of 3 eligible Quests were reachable in the reproduction. The scan now reports
+where it actually reached: `hasMore: false` only on true database exhaustion, otherwise a cursor at the
+last row **scanned**. The protective pass bound stays — hitting it now costs a request, not the
+catalogue. Clients must tolerate an empty page that still says there is more.
+
+**P1-2, sanction laundering** (TD-64). Suspend → reinstate → re-assess → publish put sanctioned content
+back, over HTTP with no SQL. **ADR-015** replaces "greatest `seq` wins" with authority:
+`HUMAN > AI > RULES`, superseded only by equal or higher authority for the same content hash. A machine
+may record an opinion about content a human ruled on; it does not take effect. The earlier P02-37 patch
+could not work, because after reinstatement the state is `DRAFT`.
+
+**P1-3, a decision displayed but not enforced** (TD-65). A published Quest could carry a HUMAN
+`REJECTED` and stay public — 200, a badge reading `REJECTED`, and 201 on accept. The decision in force
+is now a read-side precondition on detail, discovery and acceptance, and the badge is computed from the
+same resolved decision as the gate, so the two cannot disagree. Read-side deliberately: a writer that
+does not yet exist cannot leave dangerous content public by forgetting a service call.
+
+Regression coverage: 17 new integration tests and 17 new unit tests, all failing before the repair
+(11 integration failures reproduced the three defects). Five enforcement points were mutation-tested
+individually — reverting the continuation, the publish precedence, the `assess()` precedence, the
+read-side gate or the discovery filter each fails tests, so none is decorative.
+
+Carried forward, and recorded in ADR-015: a Quest concealed by a third-party decision keeps
+`state = 'PUBLISHED'`, so **Phase 14's moderation queue must do the full write-side takedown** rather
+than rely on read-side concealment.
+
+### CI database image (2026-09-12, commit `fix(ci)`)
+
+The Phase 02 CI `migrations` job could not start its database: `infrastructure/docker/postgres` was
+built on `postgis/postgis:16-3.4`, which is Debian 11, and once `bullseye-security` Release metadata
+expired the `apt-get update` in our own layer failed its validity check. The base is now
+`postgres:16-bookworm` (official, Debian 12) with `postgresql-16-postgis-3`,
+`postgresql-16-postgis-3-scripts` and `postgresql-16-pgvector` installed from the PGDG repository the
+image already carries, `signed-by` its own keyring — no repository stanza, no keyring and no trust
+decision of ours, and nothing that weakens APT. `postgis/postgis:16-3.5` was rejected because
+upstream it is still `FROM postgres:16-bullseye`. The PostGIS init script is gone rather than ported:
+extension creation belongs to migration `0000` alone, and the old script created the extension in
+`template1` so that migration's own work was never exercised. `docs/architecture/05_DATA_ARCHITECTURE.md`
+records the base and the reasoning.
+
+**The image is now verified — by CI, not locally (TD-61).** GitHub Actions run #8 on `d19899a` is
+green on all six mandatory jobs, and the `Migrations · Integration tests` job passed every step
+beginning with `Start PostgreSQL (PostGIS + pgvector) and Redis` — which builds this Dockerfile from a
+fresh checkout on a runner with real registry access. The image therefore builds, starts, and serves
+the migration cycle and the full integration suite. Nothing was verifiable in the sandbox (no
+reachable container registry; the desktop VM has no Docker), so the local database results came from
+natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0 — same package names and
+migration path, not the image. What is still outstanding is the workstation reproduction, which is
+condition A4, not TD-61.
+
+Also **TD-62**: `pnpm format:check` is a mandatory CI job that lives outside the turbo pipeline, so
+`turbo run lint typecheck test build` does not cover it. The P02-41 commit left two files unformatted
+and **did** fail CI on formatting alone — runs #6 (`0f2b051`) and #7 (`1ae3567`) both failed, and #8
+passed once the fix landed. Use `pnpm verify`, not a hand-picked subset.
+
+### CI status (2026-09-12)
+
+The branch is pushed and open as a pull request. **Run #8 on `d19899a` — the current HEAD — is green
+on all six mandatory jobs**: Format · Lint · Typecheck · Dependency rules; Unit tests · Build;
+Migrations · Integration tests; Compose config; Terraform fmt · validate; Secret scan · Dependency
+audit. **Condition A3 is met for this SHA.**
+
+That leaves **A1 — the independent gate audit — as the only blocker to Phase 03 authorization**, and
+it cannot be closed by the session that wrote Phase 02 and its three remediations. The prompt is
+`docs/governance/PHASE_02_FINAL_DELTA_AUDIT_PROMPT.md`; run it in a session with no implementation
+history. A4 (workstation reproduction), A5 (country allow-list, due before Phase 06) and A6 (Phase 01
+carried conditions) remain as recorded.
+
+## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
+
+- **Contracts** — `packages/types/src/quest/`: the Quest and participation state-transition tables,
+  the category taxonomy, difficulty, visibility and evidence vocabulary, the three-concept duration
+  model, eligibility and the age-band helpers, `canonicalQuestContent` and the content-hash version,
+  and the request/response schemas for every route.
+- **Events** — `packages/events/src/catalog/quest.ts`: twelve events across the `quest` and
+  `quest_participation` aggregates, carrying ids, hashes, states and enum categories only.
+- **Persistence** — `apps/api/drizzle/0002_quest_core.sql`: six tables, thirteen CHECK constraints,
+  twelve indexes, the seeded category catalogue, and `quest_published_requires_assessment`. The
+  Drizzle mirror is complete and an integration test compares it against the migrated database.
+- **Trust & Safety** — `RuleBasedSafetyDecision` replaces the Phase 00 placeholder: a deterministic
+  four-tier lexicon, fail-closed on error, on malformed input and on unassessable text, with
+  NFKC-folded normalisation that strips zero-width and bidi formatting characters.
+- **API** — sixteen routes: authoring, assessment, publication, archive, discovery, detail, the
+  category catalogue, participation, and the staff support surface. Refusals are 409s listing
+  machine-readable blockers.
+- **Account lifecycle** — a cross-context account-erasure registry running inside the Identity
+  deletion transaction, plus the Quest export and erasure contributors.
+- **Clients** — `@quest/api-client` quest endpoints; four mobile screens; the admin Quest support
+  page behind `VIEW_QUEST_SUPPORT` / `SANCTION_QUEST`.
+- **Operations** — `pnpm --filter @quest/api quests:process-expiries` (idempotent; a scheduled
+  worker replaces it with the first deployment, TD-21).
+- **Owner lifecycle** (gate remediation, 2026-09-11) — Identity's `OWNER_ELIGIBILITY` port with
+  batch lookup, and its enforcement in Quest read, discovery and participation (ADR-014).
+- **Documentation** — ADR-013, ADR-014, `docs/data/QUEST_DATA_MODEL.md`, `docs/api/QUEST_API.md`,
+  `docs/security/QUEST_THREAT_MODEL.md`, `docs/product/PHASE_02_QUEST_ACCEPTANCE.md`,
+  `docs/ux/PHASE_02_MOBILE_QUESTS.md`; `docs/data/IDENTITY_DATA_MODEL.md` corrected where Phase 02
+  replaced the event-subscription erasure design with the in-transaction registry.
+
+## Phase 01
 
 **Phase 01 — independent phase-gate audit 2026-09-06: PASS WITH CONDITIONS (86/100).** The audit
 reproduced every validation (cache-cleared `pnpm verify`, integration + E2E on real
@@ -202,15 +444,22 @@ microservice; nothing from Phase 02 (no quests, feed, followers, XP, crews, crea
 
 ## Next Actions
 
-1. **C1-P01**: open a pull request for `phase-01-identity` so the CI workflow runs, and confirm all
-   six jobs are green (the `migrations` job runs the identity integration suite and the SDK E2E
-   journey).
-2. **C2-P01**: `corepack enable && pnpm install --frozen-lockfile && pnpm verify` in `C:\Quest`,
-   and `pnpm infra:up && pnpm db:migrate` once Docker Desktop is available; record the results here.
-3. Only after C1-P01 is green: merge to `main`, then invoke `/quest-phase-02-quest-core` — never
-   before.
-4. Before public sign-up: mail transport (TD-21, condition C3-P01) and legal sign-off on the
-   minimum-age assumption (TD-35, condition C4-P01).
+1. **C1-P02**: run the independent Phase 02 gate audit using
+   `docs/governance/PHASE_02_GATE_AUDIT_PROMPT.md` in a fresh session. Do not skip it and do not
+   answer its questions on the auditor's behalf. It must now also cover the TD-48 remediation
+   (ADR-014 and §7 of the audit report), which was written by the same session that implemented the
+   phase and is therefore no more self-certifiable than the phase was.
+   1b. ~~**TD-60**: close the `multer` high advisories.~~ Done 2026-09-11 (`fix(deps)`); the audit gate
+   is green. Remove the override and its guard test when `@nestjs/platform-express` ships a release
+   depending on multer `>=2.3.0`.
+2. **C2-P02**: `pnpm install --frozen-lockfile && pnpm verify` in `C:\Quest`, plus
+   `pnpm --filter @quest/mobile exec expo export --platform android`; record the results here.
+3. **C3-P02**: open a pull request for `phase-02-quest-core` so the CI workflow runs, and confirm
+   all six mandatory jobs are green.
+4. Carried from Phase 01: C1-P01 (CI green for `phase-01-identity`), C3-P01 (mail transport before
+   public sign-up), C4-P01 (legal sign-off on the minimum-age assumption).
+5. Only after the Phase 02 audit records PASS or PASS WITH CONDITIONS: merge to `main`, then invoke
+   the Phase 03 command — never before.
 
 ## Last Decision Summary
 
@@ -218,4 +467,7 @@ Modular monolith (ADR-001) on PostgreSQL/PostGIS/pgvector (ADR-002, ADR-010) wit
 messaging (ADR-003), provider-independent AI Gateway (ADR-004), direct-to-storage media (ADR-005),
 Expo mobile (ADR-006), NestJS + zod (ADR-007), AWS me-central-1 (ADR-008), pnpm/Turborepo toolchain
 (ADR-009), immutable-id identity with Argon2id + HS256/rotating-refresh tokens and OIDC adapters
-(ADR-011), OpenAPI generated from zod contracts (ADR-012).
+(ADR-011), OpenAPI generated from zod contracts (ADR-012), and Quest publication gated by a content
+hash and enforced in three layers — shared rule, domain gate, database CHECK (ADR-013), with owner
+account lifecycle governing published content through a synchronous Identity query port (ADR-014), and
+safety decisions resolved by authority and enforced on every read (ADR-015).

@@ -5,3 +5,4 @@
  */
 export * from './identity';
 export * from './profiles';
+export * from './quests';

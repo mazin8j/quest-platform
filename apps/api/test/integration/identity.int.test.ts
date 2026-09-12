@@ -1101,7 +1101,8 @@ describe.skipIf(!enabled)('identity & profiles (real database)', () => {
     );
     expect(stored).toBeDefined();
     const bundle = dataExportBundleSchema.parse(JSON.parse(stored?.body.toString('utf8') ?? '{}'));
-    expect(bundle.sections.map((s) => s.context).sort()).toEqual(['identity', 'profiles']);
+    // One section per bounded context that stores account-linked data; Quest joined in Phase 02.
+    expect(bundle.sections.map((s) => s.context).sort()).toEqual(['identity', 'profiles', 'quest']);
     const identity = bundle.sections.find((s) => s.context === 'identity')?.data as {
       account: { email: string };
       consents: unknown[];

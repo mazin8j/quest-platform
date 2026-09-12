@@ -50,6 +50,7 @@ import {
 } from '../infrastructure/lifecycle.repository';
 import { SessionRepository } from '../infrastructure/session.repository';
 import { MAILER, type MailerPort } from '../ports/mailer.port';
+import { isPublicationEligibleState } from '../ports/owner-eligibility.port';
 import { PASSWORD_HASHER, type PasswordHasherPort } from '../ports/password-hasher.port';
 import { AccountViewService } from './account-view.service';
 import { SessionService } from './session.service';
@@ -312,6 +313,45 @@ export class AccountService {
     const latest = await this.lifecycle.latestDeletion(principal.accountId);
     if (!latest) throw ApiError.notFound('Deletion request');
     return toDeletionView(latest);
+  }
+
+  // ------------------------------------------------------------------ account facts port ----
+
+  /**
+   * Facts other contexts may know about an account (Quest publishing checks these). Nothing else
+   * about the account leaves Identity through this method.
+   */
+  async factsFor(accountId: string): Promise<{
+    accountId: string;
+    state: string;
+    emailVerified: boolean;
+  }> {
+    const account = await this.requireAccount(accountId);
+    return {
+      accountId: account.id,
+      state: account.state,
+      emailVerified: account.emailVerifiedAt !== null,
+    };
+  }
+
+  // ------------------------------------------------------------------ owner eligibility ----
+
+  /**
+   * `OwnerEligibilityPort`. Identity answers the policy question itself rather than handing out a
+   * lifecycle state for another context to interpret (ADR-014).
+   */
+  async isPublicationEligible(accountId: string): Promise<boolean> {
+    const account = await this.accounts.findById(accountId);
+    // A missing account is ineligible rather than an error: the caller is concealing content, and
+    // "I could not establish who owns this" must fail closed like every other unknown.
+    return account ? isPublicationEligibleState(account.state) : false;
+  }
+
+  async publicationEligibilityFor(accountIds: readonly string[]): Promise<Map<string, boolean>> {
+    const states = await this.accounts.statesByIds(accountIds);
+    const out = new Map<string, boolean>();
+    for (const [id, state] of states) out.set(id, isPublicationEligibleState(state));
+    return out;
   }
 
   // --------------------------------------------------------------------------------- staff ----

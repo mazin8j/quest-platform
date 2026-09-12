@@ -22,6 +22,9 @@
       "name": "auth"
     },
     {
+      "name": "participation"
+    },
+    {
       "name": "platform"
     },
     {
@@ -32,6 +35,9 @@
     },
     {
       "name": "public"
+    },
+    {
+      "name": "quests"
     }
   ],
   "paths": {
@@ -1293,6 +1299,766 @@
                   "reason": {
                     "type": "string",
                     "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/quests/{questId}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Support view of a Quest with its assessment history",
+        "operationId": "get-admin-quests-by-questId",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "ownerAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspendedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspensionReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "participationCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "assessments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "assessmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "contentHash": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "UNASSESSED",
+                              "ALLOWED",
+                              "ALLOWED_WITH_WARNING",
+                              "RESTRICTED",
+                              "REVIEW_REQUIRED",
+                              "REJECTED",
+                              "ESCALATED"
+                            ]
+                          },
+                          "categories": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "policyVersion": {
+                            "type": "string"
+                          },
+                          "decidedBy": {
+                            "type": "string",
+                            "enum": [
+                              "RULES",
+                              "AI",
+                              "HUMAN"
+                            ]
+                          },
+                          "assessedAt": {
+                            "type": "string"
+                          },
+                          "publishable": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assessmentId",
+                          "questId",
+                          "contentHash",
+                          "state",
+                          "categories",
+                          "policyVersion",
+                          "decidedBy",
+                          "assessedAt",
+                          "publishable",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "ownerAccountId",
+                    "state",
+                    "visibility",
+                    "title",
+                    "revision",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishedAt",
+                    "suspendedAt",
+                    "suspensionReason",
+                    "participationCount",
+                    "assessments"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "VIEW_QUEST_SUPPORT"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ]
+      }
+    },
+    "/v1/admin/quests/{questId}/reinstate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Return a suspended Quest to DRAFT",
+        "operationId": "post-admin-quests-by-questId-reinstate",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "ownerAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspendedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspensionReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "participationCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "assessments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "assessmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "contentHash": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "UNASSESSED",
+                              "ALLOWED",
+                              "ALLOWED_WITH_WARNING",
+                              "RESTRICTED",
+                              "REVIEW_REQUIRED",
+                              "REJECTED",
+                              "ESCALATED"
+                            ]
+                          },
+                          "categories": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "policyVersion": {
+                            "type": "string"
+                          },
+                          "decidedBy": {
+                            "type": "string",
+                            "enum": [
+                              "RULES",
+                              "AI",
+                              "HUMAN"
+                            ]
+                          },
+                          "assessedAt": {
+                            "type": "string"
+                          },
+                          "publishable": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assessmentId",
+                          "questId",
+                          "contentHash",
+                          "state",
+                          "categories",
+                          "policyVersion",
+                          "decidedBy",
+                          "assessedAt",
+                          "publishable",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "ownerAccountId",
+                    "state",
+                    "visibility",
+                    "title",
+                    "revision",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishedAt",
+                    "suspendedAt",
+                    "suspensionReason",
+                    "participationCount",
+                    "assessments"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "SANCTION_QUEST"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ]
+      }
+    },
+    "/v1/admin/quests/{questId}/suspend": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Withdraw a Quest from visibility",
+        "operationId": "post-admin-quests-by-questId-suspend",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "ownerAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspendedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suspensionReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "participationCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "assessments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "assessmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "contentHash": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "UNASSESSED",
+                              "ALLOWED",
+                              "ALLOWED_WITH_WARNING",
+                              "RESTRICTED",
+                              "REVIEW_REQUIRED",
+                              "REJECTED",
+                              "ESCALATED"
+                            ]
+                          },
+                          "categories": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "policyVersion": {
+                            "type": "string"
+                          },
+                          "decidedBy": {
+                            "type": "string",
+                            "enum": [
+                              "RULES",
+                              "AI",
+                              "HUMAN"
+                            ]
+                          },
+                          "assessedAt": {
+                            "type": "string"
+                          },
+                          "publishable": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assessmentId",
+                          "questId",
+                          "contentHash",
+                          "state",
+                          "categories",
+                          "policyVersion",
+                          "decidedBy",
+                          "assessedAt",
+                          "publishable",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "ownerAccountId",
+                    "state",
+                    "visibility",
+                    "title",
+                    "revision",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishedAt",
+                    "suspendedAt",
+                    "suspensionReason",
+                    "participationCount",
+                    "assessments"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "SANCTION_QUEST"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
                     "maxLength": 500
                   }
                 },
@@ -6157,6 +6923,701 @@
         "x-quest-requires-verified-email": true
       }
     },
+    "/v1/me/participations": {
+      "get": {
+        "tags": [
+          "participation"
+        ],
+        "summary": "The caller's own attempts",
+        "operationId": "get-me-participations",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "participationId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "questVersion": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "questTitle": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "ACCEPTED",
+                              "STARTED",
+                              "COMPLETION_REQUESTED",
+                              "CANCELLED",
+                              "EXPIRED"
+                            ]
+                          },
+                          "acceptedAt": {
+                            "type": "string"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "completionRequestedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "cancelledAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "participationId",
+                          "questId",
+                          "questVersion",
+                          "questTitle",
+                          "state",
+                          "acceptedAt",
+                          "startedAt",
+                          "expiresAt",
+                          "completionRequestedAt",
+                          "cancelledAt"
+                        ]
+                      }
+                    },
+                    "pageInfo": {
+                      "type": "object",
+                      "properties": {
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "nextCursor",
+                        "hasMore"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pageInfo"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "PARTICIPATE_IN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ]
+      }
+    },
+    "/v1/me/participations/{participationId}/cancel": {
+      "post": {
+        "tags": [
+          "participation"
+        ],
+        "summary": "Abandon an attempt",
+        "operationId": "post-me-participations-by-participationId-cancel",
+        "parameters": [
+          {
+            "name": "participationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questVersion": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ACCEPTED",
+                        "STARTED",
+                        "COMPLETION_REQUESTED",
+                        "CANCELLED",
+                        "EXPIRED"
+                      ]
+                    },
+                    "acceptedAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "completionRequestedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cancelledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "participationId",
+                    "questId",
+                    "questVersion",
+                    "questTitle",
+                    "state",
+                    "acceptedAt",
+                    "startedAt",
+                    "expiresAt",
+                    "completionRequestedAt",
+                    "cancelledAt"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "PARTICIPATE_IN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ]
+      }
+    },
+    "/v1/me/participations/{participationId}/completion-request": {
+      "post": {
+        "tags": [
+          "participation"
+        ],
+        "summary": "Declare completion (evidence and verification are later phases)",
+        "operationId": "post-me-participations-by-participationId-completion-request",
+        "parameters": [
+          {
+            "name": "participationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questVersion": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ACCEPTED",
+                        "STARTED",
+                        "COMPLETION_REQUESTED",
+                        "CANCELLED",
+                        "EXPIRED"
+                      ]
+                    },
+                    "acceptedAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "completionRequestedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cancelledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "participationId",
+                    "questId",
+                    "questVersion",
+                    "questTitle",
+                    "state",
+                    "acceptedAt",
+                    "startedAt",
+                    "expiresAt",
+                    "completionRequestedAt",
+                    "cancelledAt"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "PARTICIPATE_IN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-rate-limit": {
+          "limit": 30,
+          "windowSeconds": 60
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/participations/{participationId}/start": {
+      "post": {
+        "tags": [
+          "participation"
+        ],
+        "summary": "Start an accepted attempt (opens the completion window)",
+        "operationId": "post-me-participations-by-participationId-start",
+        "parameters": [
+          {
+            "name": "participationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questVersion": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ACCEPTED",
+                        "STARTED",
+                        "COMPLETION_REQUESTED",
+                        "CANCELLED",
+                        "EXPIRED"
+                      ]
+                    },
+                    "acceptedAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "completionRequestedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cancelledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "participationId",
+                    "questId",
+                    "questVersion",
+                    "questTitle",
+                    "state",
+                    "acceptedAt",
+                    "startedAt",
+                    "expiresAt",
+                    "completionRequestedAt",
+                    "cancelledAt"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "PARTICIPATE_IN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-rate-limit": {
+          "limit": 30,
+          "windowSeconds": 60
+        }
+      }
+    },
     "/v1/me/privacy": {
       "get": {
         "tags": [
@@ -7373,6 +8834,3846 @@
           "limit": 30,
           "windowSeconds": 60
         }
+      }
+    },
+    "/v1/quest-categories": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Quest category catalogue",
+        "operationId": "get-quest-categories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": [
+                              "fitness",
+                              "outdoors",
+                              "learning",
+                              "creativity",
+                              "community",
+                              "environment",
+                              "kindness",
+                              "culture",
+                              "food",
+                              "mindfulness",
+                              "skills",
+                              "exploration"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "sortOrder": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "sortOrder"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-quest-permissions": [],
+        "x-quest-account-states": [],
+        "x-quest-rate-limit": {
+          "limit": 60,
+          "windowSeconds": 60
+        }
+      }
+    },
+    "/v1/quests": {
+      "get": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Discover published public Quests (newest first, unranked)",
+        "operationId": "get-quests",
+        "parameters": [
+          {
+            "name": "categoryKey",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fitness",
+                "outdoors",
+                "learning",
+                "creativity",
+                "community",
+                "environment",
+                "kindness",
+                "culture",
+                "food",
+                "mindfulness",
+                "skills",
+                "exploration"
+              ]
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "EASY",
+                "MODERATE",
+                "HARD",
+                "EXPERT"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "IN_REVIEW",
+                              "PUBLISHED",
+                              "ARCHIVED",
+                              "SUSPENDED",
+                              "ERASED"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "PUBLIC",
+                              "UNLISTED",
+                              "PRIVATE"
+                            ]
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "publishedVersion": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "categoryKey": {
+                            "type": "string",
+                            "enum": [
+                              "fitness",
+                              "outdoors",
+                              "learning",
+                              "creativity",
+                              "community",
+                              "environment",
+                              "kindness",
+                              "culture",
+                              "food",
+                              "mindfulness",
+                              "skills",
+                              "exploration"
+                            ]
+                          },
+                          "difficulty": {
+                            "type": "string",
+                            "enum": [
+                              "EASY",
+                              "MODERATE",
+                              "HARD",
+                              "EXPERT"
+                            ]
+                          },
+                          "duration": {
+                            "type": "object",
+                            "properties": {
+                              "effortMinutes": {
+                                "type": "integer",
+                                "minimum": 5,
+                                "maximum": 480
+                              },
+                              "completionWindowHours": {
+                                "default": 24,
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 720
+                              },
+                              "availableFrom": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "availableUntil": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              }
+                            },
+                            "required": [
+                              "effortMinutes"
+                            ]
+                          },
+                          "eligibility": {
+                            "type": "object",
+                            "properties": {
+                              "minimumAgeBand": {
+                                "default": "TEEN_13_15",
+                                "type": "string",
+                                "enum": [
+                                  "TEEN_13_15",
+                                  "TEEN_16_17",
+                                  "ADULT"
+                                ]
+                              },
+                              "requiresVerifiedEmail": {
+                                "default": true,
+                                "type": "boolean"
+                              },
+                              "allowedCountries": {
+                                "default": [],
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[A-Z]{2}$"
+                                }
+                              },
+                              "blockedCountries": {
+                                "default": [],
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[A-Z]{2}$"
+                                }
+                              }
+                            }
+                          },
+                          "location": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "countryCode": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z]{2}$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "owner": {
+                            "type": "object",
+                            "properties": {
+                              "accountId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accountId",
+                              "username",
+                              "displayName"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "publishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "safety": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "UNASSESSED",
+                                      "ALLOWED",
+                                      "ALLOWED_WITH_WARNING",
+                                      "RESTRICTED",
+                                      "REVIEW_REQUIRED",
+                                      "REJECTED",
+                                      "ESCALATED"
+                                    ]
+                                  },
+                                  "warning": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "minimumAgeBand": {
+                                    "type": "string",
+                                    "enum": [
+                                      "TEEN_13_15",
+                                      "TEEN_16_17",
+                                      "ADULT"
+                                    ]
+                                  },
+                                  "policyVersion": {
+                                    "type": "string"
+                                  },
+                                  "assessedAt": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "warning",
+                                  "minimumAgeBand",
+                                  "policyVersion",
+                                  "assessedAt"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "participating": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "questId",
+                          "state",
+                          "visibility",
+                          "revision",
+                          "publishedVersion",
+                          "title",
+                          "summary",
+                          "categoryKey",
+                          "difficulty",
+                          "duration",
+                          "eligibility",
+                          "location",
+                          "owner",
+                          "createdAt",
+                          "updatedAt",
+                          "publishedAt",
+                          "safety",
+                          "participating"
+                        ]
+                      }
+                    },
+                    "pageInfo": {
+                      "type": "object",
+                      "properties": {
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "nextCursor",
+                        "hasMore"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pageInfo"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-quest-permissions": [],
+        "x-quest-account-states": [],
+        "x-quest-rate-limit": {
+          "limit": 60,
+          "windowSeconds": 60
+        }
+      },
+      "post": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Draft a Quest (owner is the authenticated principal)",
+        "operationId": "post-quests",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "publishedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "categoryKey": {
+                      "type": "string",
+                      "enum": [
+                        "fitness",
+                        "outdoors",
+                        "learning",
+                        "creativity",
+                        "community",
+                        "environment",
+                        "kindness",
+                        "culture",
+                        "food",
+                        "mindfulness",
+                        "skills",
+                        "exploration"
+                      ]
+                    },
+                    "difficulty": {
+                      "type": "string",
+                      "enum": [
+                        "EASY",
+                        "MODERATE",
+                        "HARD",
+                        "EXPERT"
+                      ]
+                    },
+                    "duration": {
+                      "type": "object",
+                      "properties": {
+                        "effortMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 480
+                        },
+                        "completionWindowHours": {
+                          "default": 24,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 720
+                        },
+                        "availableFrom": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "availableUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "effortMinutes"
+                      ]
+                    },
+                    "eligibility": {
+                      "type": "object",
+                      "properties": {
+                        "minimumAgeBand": {
+                          "default": "TEEN_13_15",
+                          "type": "string",
+                          "enum": [
+                            "TEEN_13_15",
+                            "TEEN_16_17",
+                            "ADULT"
+                          ]
+                        },
+                        "requiresVerifiedEmail": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "allowedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        },
+                        "blockedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    },
+                    "location": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "countryCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "username",
+                        "displayName"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instructions": {
+                      "type": "string"
+                    },
+                    "safetyNotes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "object",
+                      "properties": {
+                        "types": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "PHOTO",
+                              "VIDEO",
+                              "TEXT_NOTE",
+                              "CHECKLIST"
+                            ]
+                          }
+                        },
+                        "minimumItems": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "requiresLocationAttestation": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "types"
+                      ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNASSESSED",
+                                "ALLOWED",
+                                "ALLOWED_WITH_WARNING",
+                                "RESTRICTED",
+                                "REVIEW_REQUIRED",
+                                "REJECTED",
+                                "ESCALATED"
+                              ]
+                            },
+                            "warning": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minimumAgeBand": {
+                              "type": "string",
+                              "enum": [
+                                "TEEN_13_15",
+                                "TEEN_16_17",
+                                "ADULT"
+                              ]
+                            },
+                            "policyVersion": {
+                              "type": "string"
+                            },
+                            "assessedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "warning",
+                            "minimumAgeBand",
+                            "policyVersion",
+                            "assessedAt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "contentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishBlockers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "state",
+                    "visibility",
+                    "revision",
+                    "publishedVersion",
+                    "title",
+                    "summary",
+                    "categoryKey",
+                    "difficulty",
+                    "duration",
+                    "eligibility",
+                    "location",
+                    "owner",
+                    "createdAt",
+                    "updatedAt",
+                    "publishedAt",
+                    "instructions",
+                    "safetyNotes",
+                    "evidence",
+                    "safety",
+                    "participating",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishBlockers"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-requires-verified-email": true,
+        "x-quest-rate-limit": {
+          "limit": 20,
+          "windowSeconds": 60
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 4,
+                        "maxLength": 120
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 280
+                      },
+                      "instructions": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 4000
+                      },
+                      "safetyNotes": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "categoryKey": {
+                        "type": "string",
+                        "enum": [
+                          "fitness",
+                          "outdoors",
+                          "learning",
+                          "creativity",
+                          "community",
+                          "environment",
+                          "kindness",
+                          "culture",
+                          "food",
+                          "mindfulness",
+                          "skills",
+                          "exploration"
+                        ]
+                      },
+                      "difficulty": {
+                        "type": "string",
+                        "enum": [
+                          "EASY",
+                          "MODERATE",
+                          "HARD",
+                          "EXPERT"
+                        ]
+                      },
+                      "evidence": {
+                        "type": "object",
+                        "properties": {
+                          "types": {
+                            "minItems": 1,
+                            "maxItems": 4,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "PHOTO",
+                                "VIDEO",
+                                "TEXT_NOTE",
+                                "CHECKLIST"
+                              ]
+                            }
+                          },
+                          "minimumItems": {
+                            "default": 1,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "requiresLocationAttestation": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "notes": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "types"
+                        ]
+                      },
+                      "eligibility": {
+                        "type": "object",
+                        "properties": {
+                          "minimumAgeBand": {
+                            "default": "TEEN_13_15",
+                            "type": "string",
+                            "enum": [
+                              "TEEN_13_15",
+                              "TEEN_16_17",
+                              "ADULT"
+                            ]
+                          },
+                          "requiresVerifiedEmail": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "allowedCountries": {
+                            "default": [],
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            }
+                          },
+                          "blockedCountries": {
+                            "default": [],
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            }
+                          }
+                        }
+                      },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "countryCode": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "summary",
+                      "instructions",
+                      "categoryKey",
+                      "difficulty",
+                      "evidence",
+                      "eligibility"
+                    ]
+                  },
+                  "duration": {
+                    "type": "object",
+                    "properties": {
+                      "effortMinutes": {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 480
+                      },
+                      "completionWindowHours": {
+                        "default": 24,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 720
+                      },
+                      "availableFrom": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      "availableUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      }
+                    },
+                    "required": [
+                      "effortMinutes"
+                    ]
+                  },
+                  "visibility": {
+                    "default": "PUBLIC",
+                    "type": "string",
+                    "enum": [
+                      "PUBLIC",
+                      "UNLISTED",
+                      "PRIVATE"
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "duration"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quests/{questId}": {
+      "get": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Quest detail (404 when the caller may not know it exists)",
+        "operationId": "get-quests-by-questId",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "publishedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "categoryKey": {
+                      "type": "string",
+                      "enum": [
+                        "fitness",
+                        "outdoors",
+                        "learning",
+                        "creativity",
+                        "community",
+                        "environment",
+                        "kindness",
+                        "culture",
+                        "food",
+                        "mindfulness",
+                        "skills",
+                        "exploration"
+                      ]
+                    },
+                    "difficulty": {
+                      "type": "string",
+                      "enum": [
+                        "EASY",
+                        "MODERATE",
+                        "HARD",
+                        "EXPERT"
+                      ]
+                    },
+                    "duration": {
+                      "type": "object",
+                      "properties": {
+                        "effortMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 480
+                        },
+                        "completionWindowHours": {
+                          "default": 24,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 720
+                        },
+                        "availableFrom": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "availableUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "effortMinutes"
+                      ]
+                    },
+                    "eligibility": {
+                      "type": "object",
+                      "properties": {
+                        "minimumAgeBand": {
+                          "default": "TEEN_13_15",
+                          "type": "string",
+                          "enum": [
+                            "TEEN_13_15",
+                            "TEEN_16_17",
+                            "ADULT"
+                          ]
+                        },
+                        "requiresVerifiedEmail": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "allowedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        },
+                        "blockedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    },
+                    "location": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "countryCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "username",
+                        "displayName"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instructions": {
+                      "type": "string"
+                    },
+                    "safetyNotes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "object",
+                      "properties": {
+                        "types": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "PHOTO",
+                              "VIDEO",
+                              "TEXT_NOTE",
+                              "CHECKLIST"
+                            ]
+                          }
+                        },
+                        "minimumItems": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "requiresLocationAttestation": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "types"
+                      ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNASSESSED",
+                                "ALLOWED",
+                                "ALLOWED_WITH_WARNING",
+                                "RESTRICTED",
+                                "REVIEW_REQUIRED",
+                                "REJECTED",
+                                "ESCALATED"
+                              ]
+                            },
+                            "warning": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minimumAgeBand": {
+                              "type": "string",
+                              "enum": [
+                                "TEEN_13_15",
+                                "TEEN_16_17",
+                                "ADULT"
+                              ]
+                            },
+                            "policyVersion": {
+                              "type": "string"
+                            },
+                            "assessedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "warning",
+                            "minimumAgeBand",
+                            "policyVersion",
+                            "assessedAt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "contentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishBlockers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "state",
+                    "visibility",
+                    "revision",
+                    "publishedVersion",
+                    "title",
+                    "summary",
+                    "categoryKey",
+                    "difficulty",
+                    "duration",
+                    "eligibility",
+                    "location",
+                    "owner",
+                    "createdAt",
+                    "updatedAt",
+                    "publishedAt",
+                    "instructions",
+                    "safetyNotes",
+                    "evidence",
+                    "safety",
+                    "participating",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishBlockers"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-quest-permissions": [],
+        "x-quest-account-states": [],
+        "x-quest-rate-limit": {
+          "limit": 60,
+          "windowSeconds": 60
+        }
+      },
+      "put": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Replace Quest content; a safety-relevant change unpublishes it",
+        "operationId": "put-quests-by-questId",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "publishedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "categoryKey": {
+                      "type": "string",
+                      "enum": [
+                        "fitness",
+                        "outdoors",
+                        "learning",
+                        "creativity",
+                        "community",
+                        "environment",
+                        "kindness",
+                        "culture",
+                        "food",
+                        "mindfulness",
+                        "skills",
+                        "exploration"
+                      ]
+                    },
+                    "difficulty": {
+                      "type": "string",
+                      "enum": [
+                        "EASY",
+                        "MODERATE",
+                        "HARD",
+                        "EXPERT"
+                      ]
+                    },
+                    "duration": {
+                      "type": "object",
+                      "properties": {
+                        "effortMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 480
+                        },
+                        "completionWindowHours": {
+                          "default": 24,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 720
+                        },
+                        "availableFrom": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "availableUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "effortMinutes"
+                      ]
+                    },
+                    "eligibility": {
+                      "type": "object",
+                      "properties": {
+                        "minimumAgeBand": {
+                          "default": "TEEN_13_15",
+                          "type": "string",
+                          "enum": [
+                            "TEEN_13_15",
+                            "TEEN_16_17",
+                            "ADULT"
+                          ]
+                        },
+                        "requiresVerifiedEmail": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "allowedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        },
+                        "blockedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    },
+                    "location": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "countryCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "username",
+                        "displayName"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instructions": {
+                      "type": "string"
+                    },
+                    "safetyNotes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "object",
+                      "properties": {
+                        "types": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "PHOTO",
+                              "VIDEO",
+                              "TEXT_NOTE",
+                              "CHECKLIST"
+                            ]
+                          }
+                        },
+                        "minimumItems": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "requiresLocationAttestation": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "types"
+                      ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNASSESSED",
+                                "ALLOWED",
+                                "ALLOWED_WITH_WARNING",
+                                "RESTRICTED",
+                                "REVIEW_REQUIRED",
+                                "REJECTED",
+                                "ESCALATED"
+                              ]
+                            },
+                            "warning": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minimumAgeBand": {
+                              "type": "string",
+                              "enum": [
+                                "TEEN_13_15",
+                                "TEEN_16_17",
+                                "ADULT"
+                              ]
+                            },
+                            "policyVersion": {
+                              "type": "string"
+                            },
+                            "assessedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "warning",
+                            "minimumAgeBand",
+                            "policyVersion",
+                            "assessedAt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "contentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishBlockers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "state",
+                    "visibility",
+                    "revision",
+                    "publishedVersion",
+                    "title",
+                    "summary",
+                    "categoryKey",
+                    "difficulty",
+                    "duration",
+                    "eligibility",
+                    "location",
+                    "owner",
+                    "createdAt",
+                    "updatedAt",
+                    "publishedAt",
+                    "instructions",
+                    "safetyNotes",
+                    "evidence",
+                    "safety",
+                    "participating",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishBlockers"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-rate-limit": {
+          "limit": 30,
+          "windowSeconds": 60
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 4,
+                        "maxLength": 120
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 280
+                      },
+                      "instructions": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 4000
+                      },
+                      "safetyNotes": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "categoryKey": {
+                        "type": "string",
+                        "enum": [
+                          "fitness",
+                          "outdoors",
+                          "learning",
+                          "creativity",
+                          "community",
+                          "environment",
+                          "kindness",
+                          "culture",
+                          "food",
+                          "mindfulness",
+                          "skills",
+                          "exploration"
+                        ]
+                      },
+                      "difficulty": {
+                        "type": "string",
+                        "enum": [
+                          "EASY",
+                          "MODERATE",
+                          "HARD",
+                          "EXPERT"
+                        ]
+                      },
+                      "evidence": {
+                        "type": "object",
+                        "properties": {
+                          "types": {
+                            "minItems": 1,
+                            "maxItems": 4,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "PHOTO",
+                                "VIDEO",
+                                "TEXT_NOTE",
+                                "CHECKLIST"
+                              ]
+                            }
+                          },
+                          "minimumItems": {
+                            "default": 1,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "requiresLocationAttestation": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "notes": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "types"
+                        ]
+                      },
+                      "eligibility": {
+                        "type": "object",
+                        "properties": {
+                          "minimumAgeBand": {
+                            "default": "TEEN_13_15",
+                            "type": "string",
+                            "enum": [
+                              "TEEN_13_15",
+                              "TEEN_16_17",
+                              "ADULT"
+                            ]
+                          },
+                          "requiresVerifiedEmail": {
+                            "default": true,
+                            "type": "boolean"
+                          },
+                          "allowedCountries": {
+                            "default": [],
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            }
+                          },
+                          "blockedCountries": {
+                            "default": [],
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            }
+                          }
+                        }
+                      },
+                      "location": {
+                        "type": "object",
+                        "properties": {
+                          "countryCode": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 120
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "summary",
+                      "instructions",
+                      "categoryKey",
+                      "difficulty",
+                      "evidence",
+                      "eligibility"
+                    ]
+                  },
+                  "duration": {
+                    "type": "object",
+                    "properties": {
+                      "effortMinutes": {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 480
+                      },
+                      "completionWindowHours": {
+                        "default": 24,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 720
+                      },
+                      "availableFrom": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      "availableUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      }
+                    },
+                    "required": [
+                      "effortMinutes"
+                    ]
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "PUBLIC",
+                      "UNLISTED",
+                      "PRIVATE"
+                    ]
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "content",
+                  "duration",
+                  "visibility",
+                  "expectedRevision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quests/{questId}/archive": {
+      "post": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Archive a Quest and cancel its active attempts",
+        "operationId": "post-quests-by-questId-archive",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "publishedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "categoryKey": {
+                      "type": "string",
+                      "enum": [
+                        "fitness",
+                        "outdoors",
+                        "learning",
+                        "creativity",
+                        "community",
+                        "environment",
+                        "kindness",
+                        "culture",
+                        "food",
+                        "mindfulness",
+                        "skills",
+                        "exploration"
+                      ]
+                    },
+                    "difficulty": {
+                      "type": "string",
+                      "enum": [
+                        "EASY",
+                        "MODERATE",
+                        "HARD",
+                        "EXPERT"
+                      ]
+                    },
+                    "duration": {
+                      "type": "object",
+                      "properties": {
+                        "effortMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 480
+                        },
+                        "completionWindowHours": {
+                          "default": 24,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 720
+                        },
+                        "availableFrom": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "availableUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "effortMinutes"
+                      ]
+                    },
+                    "eligibility": {
+                      "type": "object",
+                      "properties": {
+                        "minimumAgeBand": {
+                          "default": "TEEN_13_15",
+                          "type": "string",
+                          "enum": [
+                            "TEEN_13_15",
+                            "TEEN_16_17",
+                            "ADULT"
+                          ]
+                        },
+                        "requiresVerifiedEmail": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "allowedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        },
+                        "blockedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    },
+                    "location": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "countryCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "username",
+                        "displayName"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instructions": {
+                      "type": "string"
+                    },
+                    "safetyNotes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "object",
+                      "properties": {
+                        "types": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "PHOTO",
+                              "VIDEO",
+                              "TEXT_NOTE",
+                              "CHECKLIST"
+                            ]
+                          }
+                        },
+                        "minimumItems": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "requiresLocationAttestation": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "types"
+                      ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNASSESSED",
+                                "ALLOWED",
+                                "ALLOWED_WITH_WARNING",
+                                "RESTRICTED",
+                                "REVIEW_REQUIRED",
+                                "REJECTED",
+                                "ESCALATED"
+                              ]
+                            },
+                            "warning": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minimumAgeBand": {
+                              "type": "string",
+                              "enum": [
+                                "TEEN_13_15",
+                                "TEEN_16_17",
+                                "ADULT"
+                              ]
+                            },
+                            "policyVersion": {
+                              "type": "string"
+                            },
+                            "assessedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "warning",
+                            "minimumAgeBand",
+                            "policyVersion",
+                            "assessedAt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "contentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishBlockers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "state",
+                    "visibility",
+                    "revision",
+                    "publishedVersion",
+                    "title",
+                    "summary",
+                    "categoryKey",
+                    "difficulty",
+                    "duration",
+                    "eligibility",
+                    "location",
+                    "owner",
+                    "createdAt",
+                    "updatedAt",
+                    "publishedAt",
+                    "instructions",
+                    "safetyNotes",
+                    "evidence",
+                    "safety",
+                    "participating",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishBlockers"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quests/{questId}/assessment": {
+      "post": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Request a safety assessment of the current content",
+        "operationId": "post-quests-by-questId-assessment",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assessmentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "UNASSESSED",
+                        "ALLOWED",
+                        "ALLOWED_WITH_WARNING",
+                        "RESTRICTED",
+                        "REVIEW_REQUIRED",
+                        "REJECTED",
+                        "ESCALATED"
+                      ]
+                    },
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "policyVersion": {
+                      "type": "string"
+                    },
+                    "decidedBy": {
+                      "type": "string",
+                      "enum": [
+                        "RULES",
+                        "AI",
+                        "HUMAN"
+                      ]
+                    },
+                    "assessedAt": {
+                      "type": "string"
+                    },
+                    "publishable": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "assessmentId",
+                    "questId",
+                    "contentHash",
+                    "state",
+                    "categories",
+                    "policyVersion",
+                    "decidedBy",
+                    "assessedAt",
+                    "publishable",
+                    "reason"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-rate-limit": {
+          "limit": 10,
+          "windowSeconds": 60
+        }
+      }
+    },
+    "/v1/quests/{questId}/participation": {
+      "post": {
+        "tags": [
+          "participation"
+        ],
+        "summary": "Accept a Quest (eligibility evaluated server-side)",
+        "operationId": "post-quests-by-questId-participation",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "questVersion": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ACCEPTED",
+                        "STARTED",
+                        "COMPLETION_REQUESTED",
+                        "CANCELLED",
+                        "EXPIRED"
+                      ]
+                    },
+                    "acceptedAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "completionRequestedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "cancelledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "participationId",
+                    "questId",
+                    "questVersion",
+                    "questTitle",
+                    "state",
+                    "acceptedAt",
+                    "startedAt",
+                    "expiresAt",
+                    "completionRequestedAt",
+                    "cancelledAt"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "PARTICIPATE_IN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-rate-limit": {
+          "limit": 30,
+          "windowSeconds": 60
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedPublishedVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quests/{questId}/publish": {
+      "post": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "Publish a Quest (fails closed with machine-readable blockers)",
+        "operationId": "post-quests-by-questId-publish",
+        "parameters": [
+          {
+            "name": "questId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "IN_REVIEW",
+                        "PUBLISHED",
+                        "ARCHIVED",
+                        "SUSPENDED",
+                        "ERASED"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "PUBLIC",
+                        "UNLISTED",
+                        "PRIVATE"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "publishedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "categoryKey": {
+                      "type": "string",
+                      "enum": [
+                        "fitness",
+                        "outdoors",
+                        "learning",
+                        "creativity",
+                        "community",
+                        "environment",
+                        "kindness",
+                        "culture",
+                        "food",
+                        "mindfulness",
+                        "skills",
+                        "exploration"
+                      ]
+                    },
+                    "difficulty": {
+                      "type": "string",
+                      "enum": [
+                        "EASY",
+                        "MODERATE",
+                        "HARD",
+                        "EXPERT"
+                      ]
+                    },
+                    "duration": {
+                      "type": "object",
+                      "properties": {
+                        "effortMinutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 480
+                        },
+                        "completionWindowHours": {
+                          "default": 24,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 720
+                        },
+                        "availableFrom": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "availableUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "effortMinutes"
+                      ]
+                    },
+                    "eligibility": {
+                      "type": "object",
+                      "properties": {
+                        "minimumAgeBand": {
+                          "default": "TEEN_13_15",
+                          "type": "string",
+                          "enum": [
+                            "TEEN_13_15",
+                            "TEEN_16_17",
+                            "ADULT"
+                          ]
+                        },
+                        "requiresVerifiedEmail": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "allowedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        },
+                        "blockedCountries": {
+                          "default": [],
+                          "maxItems": 50,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      }
+                    },
+                    "location": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "countryCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{2}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "username",
+                        "displayName"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instructions": {
+                      "type": "string"
+                    },
+                    "safetyNotes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "object",
+                      "properties": {
+                        "types": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "PHOTO",
+                              "VIDEO",
+                              "TEXT_NOTE",
+                              "CHECKLIST"
+                            ]
+                          }
+                        },
+                        "minimumItems": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "requiresLocationAttestation": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "types"
+                      ]
+                    },
+                    "safety": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNASSESSED",
+                                "ALLOWED",
+                                "ALLOWED_WITH_WARNING",
+                                "RESTRICTED",
+                                "REVIEW_REQUIRED",
+                                "REJECTED",
+                                "ESCALATED"
+                              ]
+                            },
+                            "warning": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minimumAgeBand": {
+                              "type": "string",
+                              "enum": [
+                                "TEEN_13_15",
+                                "TEEN_16_17",
+                                "ADULT"
+                              ]
+                            },
+                            "policyVersion": {
+                              "type": "string"
+                            },
+                            "assessedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "warning",
+                            "minimumAgeBand",
+                            "policyVersion",
+                            "assessedAt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "participating": {
+                      "type": "boolean"
+                    },
+                    "contentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishedContentHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publishBlockers": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questId",
+                    "state",
+                    "visibility",
+                    "revision",
+                    "publishedVersion",
+                    "title",
+                    "summary",
+                    "categoryKey",
+                    "difficulty",
+                    "duration",
+                    "eligibility",
+                    "location",
+                    "owner",
+                    "createdAt",
+                    "updatedAt",
+                    "publishedAt",
+                    "instructions",
+                    "safetyNotes",
+                    "evidence",
+                    "safety",
+                    "participating",
+                    "contentHash",
+                    "publishedContentHash",
+                    "publishBlockers"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ],
+        "x-quest-requires-verified-email": true,
+        "x-quest-rate-limit": {
+          "limit": 10,
+          "windowSeconds": 60
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedContentHash": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "expectedContentHash"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/quests/mine": {
+      "get": {
+        "tags": [
+          "quests"
+        ],
+        "summary": "The caller's own Quests in every state",
+        "operationId": "get-quests-mine",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "questId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "IN_REVIEW",
+                              "PUBLISHED",
+                              "ARCHIVED",
+                              "SUSPENDED",
+                              "ERASED"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "PUBLIC",
+                              "UNLISTED",
+                              "PRIVATE"
+                            ]
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "publishedVersion": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "categoryKey": {
+                            "type": "string",
+                            "enum": [
+                              "fitness",
+                              "outdoors",
+                              "learning",
+                              "creativity",
+                              "community",
+                              "environment",
+                              "kindness",
+                              "culture",
+                              "food",
+                              "mindfulness",
+                              "skills",
+                              "exploration"
+                            ]
+                          },
+                          "difficulty": {
+                            "type": "string",
+                            "enum": [
+                              "EASY",
+                              "MODERATE",
+                              "HARD",
+                              "EXPERT"
+                            ]
+                          },
+                          "duration": {
+                            "type": "object",
+                            "properties": {
+                              "effortMinutes": {
+                                "type": "integer",
+                                "minimum": 5,
+                                "maximum": 480
+                              },
+                              "completionWindowHours": {
+                                "default": 24,
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 720
+                              },
+                              "availableFrom": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "availableUntil": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              }
+                            },
+                            "required": [
+                              "effortMinutes"
+                            ]
+                          },
+                          "eligibility": {
+                            "type": "object",
+                            "properties": {
+                              "minimumAgeBand": {
+                                "default": "TEEN_13_15",
+                                "type": "string",
+                                "enum": [
+                                  "TEEN_13_15",
+                                  "TEEN_16_17",
+                                  "ADULT"
+                                ]
+                              },
+                              "requiresVerifiedEmail": {
+                                "default": true,
+                                "type": "boolean"
+                              },
+                              "allowedCountries": {
+                                "default": [],
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[A-Z]{2}$"
+                                }
+                              },
+                              "blockedCountries": {
+                                "default": [],
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[A-Z]{2}$"
+                                }
+                              }
+                            }
+                          },
+                          "location": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "countryCode": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z]{2}$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "maxLength": 120
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "owner": {
+                            "type": "object",
+                            "properties": {
+                              "accountId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accountId",
+                              "username",
+                              "displayName"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "publishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "safety": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "UNASSESSED",
+                                      "ALLOWED",
+                                      "ALLOWED_WITH_WARNING",
+                                      "RESTRICTED",
+                                      "REVIEW_REQUIRED",
+                                      "REJECTED",
+                                      "ESCALATED"
+                                    ]
+                                  },
+                                  "warning": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "minimumAgeBand": {
+                                    "type": "string",
+                                    "enum": [
+                                      "TEEN_13_15",
+                                      "TEEN_16_17",
+                                      "ADULT"
+                                    ]
+                                  },
+                                  "policyVersion": {
+                                    "type": "string"
+                                  },
+                                  "assessedAt": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "warning",
+                                  "minimumAgeBand",
+                                  "policyVersion",
+                                  "assessedAt"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "participating": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "questId",
+                          "state",
+                          "visibility",
+                          "revision",
+                          "publishedVersion",
+                          "title",
+                          "summary",
+                          "categoryKey",
+                          "difficulty",
+                          "duration",
+                          "eligibility",
+                          "location",
+                          "owner",
+                          "createdAt",
+                          "updatedAt",
+                          "publishedAt",
+                          "safety",
+                          "participating"
+                        ]
+                      }
+                    },
+                    "pageInfo": {
+                      "type": "object",
+                      "properties": {
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "nextCursor",
+                        "hasMore"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pageInfo"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission, disallowed account state, or unverified email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (retry-after header)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-quest-permissions": [
+          "MANAGE_OWN_QUESTS"
+        ],
+        "x-quest-account-states": [
+          "ACTIVE",
+          "PENDING_VERIFICATION"
+        ]
       }
     },
     "/v1/system/info": {

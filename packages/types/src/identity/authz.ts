@@ -42,6 +42,10 @@ export const Permission = {
   MANAGE_OWN_BLOCKS: 'MANAGE_OWN_BLOCKS',
   REQUEST_OWN_DATA_EXPORT: 'REQUEST_OWN_DATA_EXPORT',
   REQUEST_OWN_DELETION: 'REQUEST_OWN_DELETION',
+  /** Author and manage one's own Quests (Phase 02). */
+  MANAGE_OWN_QUESTS: 'MANAGE_OWN_QUESTS',
+  /** Accept, start and complete Quests authored by others (Phase 02). */
+  PARTICIPATE_IN_QUESTS: 'PARTICIPATE_IN_QUESTS',
   // ---- staff ----
   VIEW_DASHBOARD: 'VIEW_DASHBOARD',
   VIEW_MODERATION_QUEUE: 'VIEW_MODERATION_QUEUE',
@@ -49,6 +53,10 @@ export const Permission = {
   ESCALATE_CASE: 'ESCALATE_CASE',
   VIEW_USER_SUPPORT_PROFILE: 'VIEW_USER_SUPPORT_PROFILE',
   SANCTION_USER: 'SANCTION_USER',
+  /** Read any Quest with its assessment history (support/moderation, Phase 02). */
+  VIEW_QUEST_SUPPORT: 'VIEW_QUEST_SUPPORT',
+  /** Withdraw a Quest from visibility and reinstate it to DRAFT (Phase 02). */
+  SANCTION_QUEST: 'SANCTION_QUEST',
   VIEW_ANALYTICS: 'VIEW_ANALYTICS',
   MANAGE_STAFF: 'MANAGE_STAFF',
   MANAGE_POLICY: 'MANAGE_POLICY',
@@ -67,6 +75,8 @@ const SELF_SERVICE: ReadonlyArray<Permission> = [
   P.MANAGE_OWN_BLOCKS,
   P.REQUEST_OWN_DATA_EXPORT,
   P.REQUEST_OWN_DELETION,
+  P.MANAGE_OWN_QUESTS,
+  P.PARTICIPATE_IN_QUESTS,
 ];
 
 const STAFF_ALL: ReadonlyArray<Permission> = [
@@ -76,6 +86,8 @@ const STAFF_ALL: ReadonlyArray<Permission> = [
   P.ESCALATE_CASE,
   P.VIEW_USER_SUPPORT_PROFILE,
   P.SANCTION_USER,
+  P.VIEW_QUEST_SUPPORT,
+  P.SANCTION_QUEST,
   P.VIEW_ANALYTICS,
   P.MANAGE_STAFF,
   P.MANAGE_POLICY,
@@ -92,6 +104,8 @@ export const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = 
     P.ESCALATE_CASE,
     P.VIEW_USER_SUPPORT_PROFILE,
     P.SANCTION_USER,
+    P.VIEW_QUEST_SUPPORT,
+    P.SANCTION_QUEST,
     P.MANAGE_POLICY,
     P.VIEW_ANALYTICS,
   ]),
@@ -100,8 +114,15 @@ export const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = 
     P.VIEW_MODERATION_QUEUE,
     P.DECIDE_MODERATION_CASE,
     P.ESCALATE_CASE,
+    P.VIEW_QUEST_SUPPORT,
+    P.SANCTION_QUEST,
   ]),
-  SUPPORT: new Set([P.VIEW_DASHBOARD, P.VIEW_USER_SUPPORT_PROFILE, P.ESCALATE_CASE]),
+  SUPPORT: new Set([
+    P.VIEW_DASHBOARD,
+    P.VIEW_USER_SUPPORT_PROFILE,
+    P.VIEW_QUEST_SUPPORT,
+    P.ESCALATE_CASE,
+  ]),
   ANALYST: new Set([P.VIEW_DASHBOARD, P.VIEW_ANALYTICS]),
   READ_ONLY: new Set([P.VIEW_DASHBOARD]),
 };

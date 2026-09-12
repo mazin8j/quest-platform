@@ -108,7 +108,235 @@
   `@Throttle` decorators; add a drift test so documented and enforced limits cannot diverge
   (P01-A11).
 
+### Phase 02 follow-ups (Quest core, 2026-09-07)
+
+Residual items from the Phase 02 adversarial review. Every P0 and P1 was repaired on the branch
+with a regression test; what remains here is the P2 set and the debt the phase deliberately took on.
+
+- TD-37 Events are a dual write with no outbox: `QuestPublished`, `QuestUnpublished`,
+  `QuestSafetyAssessed` and the participation events are published after the transaction commits
+  against the in-process bus, so a crash between commit and publish loses them permanently. Harmless
+  today (no cross-process consumer) and already the pending decision recorded in
+  `ARCHITECTURE_DECISIONS.md`; mandatory before the first one (P02-P2).
+- TD-38 `IN_REVIEW` has no human approval path. A favourable re-assessment now releases a Quest, but
+  until Phase 14 provides a moderation queue there is no way for a person to clear one, and a Quest
+  the rule engine flags in error waits on a policy change. Owners can still revise and re-assess.
+- TD-39 The safety lexicon is deliberately small and English-only. Normalisation now defeats
+  zero-width and fullwidth evasion, but leetspeak, transliteration and every non-English language
+  are unhandled; Phase 06's classifier behind the AI Gateway is the answer, and until then the
+  engine's false-negative rate is a known limit, not a defect.
+- TD-40 `ACCEPTED` attempts never expire: `expires_at` is set only at START, so an accepted-and-
+  abandoned attempt holds its unique active slot until the participant cancels. The transition table
+  already defines `ACCEPTED --EXPIRE--> EXPIRED`; give acceptance a deadline and widen the sweep.
+- TD-41 Repeat-completion farming: `COMPLETION_REQUESTED` is not an active state, so one account can
+  loop accept → start → request-completion on the same Quest without limit. Harmless in Phase 02
+  (nothing is awarded); Phase 05 must bound it before evidence carries value.
+- TD-42 No idempotency keys on the new mutating routes. `POST /v1/quests` retried on a flaky network
+  creates a duplicate draft; accept is protected by the partial unique index and publish/archive are
+  naturally idempotent through 409. `API_CONVENTIONS.md` promises the header; no server code reads it.
+- TD-43 Displayed terms can differ from enforced terms after a non-safety-relevant edit: widening the
+  completion window changes the card immediately, while a participant who accepted earlier is frozen
+  at the version they accepted. Correct, but the card should say which version it is describing.
+- TD-44 `quest_discovery_idx` is partial, so a generic plan (a future `.prepare()`, or a pooler that
+  promotes named statements) falls back to a sequential scan with no error. Re-check the plan when
+  the first pooler is introduced.
+- TD-45 A safety restriction demanding an age above 18 is refused at publication rather than
+  enforced, because the three-band model cannot express it. Either widen the model or narrow
+  `safetyRestrictionsSchema.minimumAge` to what the platform can enforce.
+- TD-46 Mobile has no Quest edit screen: `PUT /v1/quests/:questId` exists and is exercised by the
+  API tests, but the composer only creates. Owners cannot revise from the phone.
+- TD-47 `quest_audit_ledger` retention is now documented in `docs/data/QUEST_DATA_MODEL.md`, but the
+  append-only property is a code convention with no trigger or `REVOKE` behind it — the same gap as
+  TD-34 for the consent ledger, and worth solving once for both.
+
+### Phase 02 final delta audit P1s (2026-09-12, `docs/governance/PHASE_02_FINAL_DELTA_AUDIT_2026-09-12.md`)
+
+All three repaired on this branch with regression tests proven to fail before each repair, and each
+enforcement point mutation-tested individually.
+
+- TD-63 **P1-1 — discovery reported end-of-feed while eligible Quests remained. RESOLVED 2026-09-12.**
+  A run of more than `MAX_DISCOVERY_PASSES × (limit + 1)` consecutive Quests by ineligible owners
+  truncated the public catalogue: the refill loop exited on the pass bound, the scan position was a
+  local variable and was discarded, and `hasMore` came from the survivor count. Reproduced at 3
+  eligible Quests behind 18 concealed ones (`limit=2`): `rows=0, hasMore=false`, 0 of 3 reachable.
+  Fixed by making the scan report where it reached — `toScannedPage` returns `hasMore: true` with a
+  cursor at the last row **scanned** whenever the loop stopped for any reason other than database
+  exhaustion. The pass bound is kept (an unbounded scan is its own abuse vector); what changed is that
+  hitting it costs the client a request instead of the catalogue. The residual is a real trade:
+  concealment can now produce empty pages, which clients must tolerate — documented in
+  `docs/api/QUEST_API.md`.
+
+- TD-64 **P1-2 — a staff suspension was undone by reinstate → re-assess → publish. RESOLVED
+  2026-09-12.** Reproduced over HTTP against real staff endpoints with no SQL at all. Fixed by
+  **ADR-015**: the decision in force is chosen by authority (`HUMAN > AI > RULES`, superseded only by
+  equal or higher authority for the same content hash), not by greatest `seq`. `evaluatePublish` and
+  `assess()` both resolve it. The earlier P02-37 patch refused re-assessment while `SUSPENDED`, which
+  could not work because after reinstatement the state is `DRAFT` — the defect was in the resolution
+  rule, not the lifecycle.
+
+- TD-65 **P1-3 — a blocking decision was displayed and not enforced. RESOLVED 2026-09-12.** A
+  published Quest could carry a HUMAN `REJECTED` for its published content and stay public, with the
+  API returning 200, a badge reading `REJECTED`, and 201 on accept. Fixed by read-side enforcement:
+  `questAccessFor` takes a `safetyPublishable` gate, discovery applies it batched per pass, acceptance
+  inherits it, and `start`/`completion-request` are refused while `cancel` stays open. The badge is now
+  computed from the same resolved decision as the gate, so the two cannot disagree. Read-side
+  deliberately, so a writer that does not yet exist cannot leave dangerous content public by failing to
+  call a service method.
+
+  **Carried forward from this repair:** a Quest concealed by a third-party decision keeps
+  `state = 'PUBLISHED'` and its publication proof, so `/v1/quests/mine` shows the owner `PUBLISHED`
+  with a blocking badge, and the database alone no longer says whether a Quest is publicly visible.
+  Acceptable while no Phase 02 route can record such a decision; **when Phase 14 ships the moderation
+  queue it must perform the full write-side takedown** (state transition, proof cleared, participations
+  withdrawn), not rely on read-side concealment. Recorded in ADR-015's Consequences.
+
+### Phase 02 gate-audit follow-ups (2026-09-08, `docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`)
+
+Residual items from the gate audit. Its 2 P0 and 5 P1 findings were repaired on the branch with
+regression tests proven to fail before each repair; these are the P2/P3 remainder plus the one P1
+deliberately deferred.
+
+- TD-48 **P02-41 (P1) — RESOLVED 2026-09-11** (`audit(P02-41)`, gate condition A2 discharged).
+  Suspending or deactivating an account left every Quest it had already published fully live:
+  account state was checked when publishing but by no read path. Resolved by **ADR-014**, which
+  chose the synchronous Identity query port over the event consumer (unreliable without a
+  transactional outbox), the denormalised column (write amplification whose partially-applied state
+  is a partially-applied sanction) and the hybrid (correct shape, not buildable yet). Identity now
+  exports `OWNER_ELIGIBILITY` with a batch method; Quest Core conceals ineligible owners' Quests
+  from detail, discovery and acceptance as a 404, refuses `start` and `completion-request` with the
+  same 409 an unpublished Quest gives, and leaves `cancel` open. Reactivation restores visibility
+  only where the Quest's own ADR-013 proof is still valid. Eleven regression tests (8 integration,
+  3 unit), each proven to fail before the repair by reverting the three enforcement points
+  individually. The list-by-owner staff endpoint that finding also mentioned is **not** part of this
+  repair and is no longer needed for the sanction to work — it is now only a staff convenience, and
+  is carried forward as TD-59.
+- TD-49 **P02-43 (gate condition A5).** `effectiveCountryRules` fails _open_ on disjoint
+  allow-lists: declared `['FR']` ∩ assessment `['DE']` = `[]`, and an empty allow-list means "no
+  restriction", so the Quest becomes acceptable worldwide. Latent only because the Phase 02 engine
+  always emits empty country arrays; must be closed before any HUMAN or AI decider can set country
+  restrictions, i.e. before Phase 06.
+- TD-50 **P02-44.** A newer, still-publishable decision that _tightens_ a live Quest (e.g.
+  `RESTRICTED` with `minimumAge: 18`) is recorded but never applied — `assess()` handles the
+  not-publishable and publishable-in-review cases and lets publishable-and-PUBLISHED fall through,
+  leaving `published_minimum_age_band` stale while the safety badge shows the new decision.
+- TD-51 **P02-42.** `accept()` evaluates block, country, age band and availability against an
+  unlocked read; the locked re-read checks only state and version. A client omitting the optional
+  `expectedPublishedVersion` while racing a republish is bound to a version its eligibility was
+  never evaluated against.
+- TD-52 **P02-45.** The auth guard returns on `@Public` _before_ the account-state check, so a
+  deactivated or deletion-requested staff principal keeps `canViewSupport` on `GET /v1/quests/:id`.
+  The lifecycle comment claiming "everything else is blocked by the lifecycle guard" is false for
+  every `@Public` route — a Phase 01 seam surfaced by Phase 02.
+- TD-53 **P02-46, P02-51.** Two erasure statements remain unbounded (`deleteForAccount`,
+  `clearSanctionsBy`) beside the batching that exists precisely to avoid that; and an account large
+  enough to exhaust `ERASURE_MAX_BATCHES` now fails loudly but still cannot be deleted without
+  operator intervention. Both want the same fix: drain them in batches too, across cascade runs.
+- TD-54 **P02-47.** The export omits the account's own safety assessments, version snapshots and
+  ledger entries, and several columns of its own Quest rows; `truncated` also false-positives at
+  exactly 1000 rows because the bound is tested with `===` rather than a `limit + 1` probe.
+- TD-55 **P02-48.** Idempotency keys are allowed through CORS and sent by the client but read by no
+  server code, while SKILL.md lists idempotency as Required. A retried `POST /v1/quests` duplicates
+  the draft. (Supersedes the narrower TD-42.)
+- TD-56 **P02-49, P02-52, P02-53.** `supportView` does not exclude `ERASED`, so a tombstoned Quest's
+  owner id and assessment history stay staff-readable after deletion; `contentOf()` drops
+  `location.label` when `countryCode` is absent, so a version snapshot omits a field its own hash
+  covers; and a safety-driven withdrawal emits `QuestUnpublished{reason:'REVISED'}`, leaving
+  consumers unable to tell a T&S takedown from an owner edit.
+- TD-57 **P02-54, P02-55.** Test-quality debt: `lifecycle.test.ts` passes against an empty
+  transition table, `quest.test.ts`'s exhaustiveness claim varies only one axis, a `content.test.ts`
+  assertion is unfalsifiable by construction, and two integration assertions run against 404 bodies.
+  The mobile copy tables miss three codes the server emits (`SAFETY_AGE_RESTRICTION_UNSUPPORTED`,
+  `QUEST_NOT_OPEN`, `COUNTRY_UNKNOWN`) and the test iterates a hardcoded list rather than the
+  server's vocabulary, so it cannot detect the gap.
+- TD-58 **P02-50, P02-56, P02-57.** "Optional location constraints" (SKILL.md scope) is half
+  implemented — the Quest's location is stored, hashed and assessed but constrains nothing, since
+  acceptance is gated on the viewer's country against the owner's lists. Discovery pagination can
+  still end early after `MAX_DISCOVERY_PASSES`. And the Phase 02 execution report's test and
+  operation counts (275, 67) do not match the reproducible figures (283, 68). The
+  `MAX_DISCOVERY_PASSES` half of this is now under slightly more pressure: the TD-48 repair filters
+  ineligible owners in the same refill loop, so a page can be shortened by two independent causes
+  instead of one. Correctness is unaffected (the cursor still advances over every row considered);
+  what can happen is an early `hasMore: false` for a viewer whose visible catalogue is unusually
+  sparse. The fix is the same one this item already wants — filter in SQL rather than after it.
+
+- TD-59 **Staff list-by-owner endpoint (from P02-41, split out 2026-09-11).** With TD-48 resolved,
+  a suspended owner's Quests are concealed automatically, so staff no longer _need_ to find and
+  suspend each one by id for the sanction to take effect. What is still missing is the ability to
+  enumerate one account's Quests for a moderation case — reviewing what an author published, or
+  taking a permanent per-Quest action that should survive their reinstatement. Wants the existing
+  `VIEW_QUEST_SUPPORT` permission and the audit ledger entry every support read should leave.
+
 ### Should fix
+
+- TD-60 **`multer` high advisories — RESOLVED 2026-09-11** (`fix(deps)`). Observed the same day:
+  `pnpm audit --audit-level=high` began failing on four advisories against `multer@2.2.0` —
+  GHSA-wc9g-mqfw-jrwm (DoS via crafted multipart field names), GHSA-qfvm-cv95-jqjf (DoS via file
+  descriptor leak on aborted uploads) and GHSA-535w-7cp7-47q4 (DoS via oversized array index),
+  all high, plus GHSA-qvfw-j98x-7q72 (low, file-size-limit bypass via an async `fileFilter` race).
+  One dependency path only: `apps/api → @nestjs/platform-express@12.0.1 → multer@2.2.0`. The
+  lockfile was untouched by the TD-48 work, so this was a newly published advisory set against an
+  unchanged dependency tree, not a regression.
+
+  **Not reachable in QUEST**: there is no `FileInterceptor`, `FilesInterceptor`, `MulterModule`,
+  multipart parser or upload route anywhere in the workspace, and `apps/api` imports only the
+  `NestExpressApplication` _type_ from the package. Importing `@nestjs/platform-express` does pull
+  multer's modules into the require graph, but the vulnerable code is in the multipart parser,
+  which runs only when a multer middleware is mounted on a route — and none is. Phase 05 media
+  goes direct to object storage (ADR-005), so nothing planned mounts one either.
+
+  **Repaired rather than risk-accepted.** `@nestjs/platform-express@12.0.1` is the latest release
+  and pins multer to exactly `2.2.0`; no published version depends on the fixed `2.3.0`, so an
+  upgrade of the parent was not available and a pnpm override was the only route to the patch.
+  `2.2.0 → 2.3.0` is a semver-minor bump inside the same major, and since QUEST invokes none of
+  multer's API the compatibility surface is empty. `pnpm-workspace.yaml` now carries
+  `overrides: { multer: '2.3.0' }`; the lockfile diff is ten lines and touches nothing else.
+  `pnpm audit --audit-level=high` exits 0 again, with the two remaining highs being the
+  pre-existing documented image-size acceptances (TD-17).
+
+  Guarded by `apps/api/test/dependency-pins.test.ts`, which fails in the ordinary unit run if the
+  override is ever lost — proven by removing it and re-installing. An audit gate catches this only
+  after the regression is in the lockfile and only while the advisory database still lists it;
+  the test catches it immediately and says why. **Remove the override** — and that test — once
+  `@nestjs/platform-express` ships a release depending on `>=2.3.0` itself.
+
+- TD-61 **The postgres image build — RESOLVED by CI 2026-09-12.** GitHub Actions run #8 on
+  `d19899a` is green, and its `Migrations · Integration tests` job passed every step, starting with
+  `Start PostgreSQL (PostGIS + pgvector) and Redis`. That step builds this Dockerfile from a fresh
+  checkout on a runner with real registry access, so `postgres:16-bookworm` plus the PGDG extension
+  packages **does** build, start and serve migrations and the whole integration suite. The `Compose
+config` job is green too. What remains open is only the local developer reproduction (condition
+  A4): nobody has yet run `docker compose build --no-cache postgres` on a workstation and recorded
+  the observed `SELECT version();` and `pg_available_extensions` output. Expect PGDG bookworm to
+  report newer extensions than the native packages used in the sandbox (PostGIS 3.5.x, pgvector
+  0.8.x) — that is correct, not drift. Original entry, kept for the record:
+
+  ~~**The postgres image build is unverified (2026-09-12).**~~ `fix(ci)` moved
+  `infrastructure/docker/postgres` off the unbuildable `postgis/postgis:16-3.4` onto
+  `postgres:16-bookworm` plus PGDG extension packages, but **the image was never built or run**: the
+  cloud sandbox has a Docker daemon and no reachable container registry (`registry-1.docker.io`
+  answers 403 through the egress proxy, so even `docker build --check` cannot resolve base metadata),
+  and the desktop Linux VM has no Docker at all. Everything database-shaped was verified against
+  natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0, which exercises the same
+  package names and the same migration path but is **not** the image. Before this is called proven,
+  on a machine with Docker: `docker compose down -v`, `docker compose build --no-cache postgres`,
+  `docker compose up -d --wait postgres redis`, then `SELECT version();` and the
+  `pg_available_extensions` query, then the clean migration cycle and the integration suite. Note
+  that PGDG bookworm will supply newer PostGIS and pgvector than the native packages above (PostGIS
+  3.5.x, pgvector 0.8.x), which is expected and is what `default_version` should show.
+
+- TD-62 **`pnpm format:check` is outside the turbo pipeline, so `turbo run lint typecheck test build`
+  is not sufficient verification.** The P02-41 commit left two source files unformatted and passed
+  every check that was actually run, while failing the mandatory CI `format:check` job; it was fixed
+  twice independently (`580a954` on the device, an identical commit in the cloud clone), which is the
+  clearest possible evidence that the gap is easy to fall into. `pnpm verify` does include it. Either
+  make `format` a turbo task so `--filter`/`--force` runs cover it, or make the standing instruction
+  "run `pnpm verify`, not a hand-picked subset". Until then, treat `format:check` as a separate
+  mandatory step in every change.
+
+  **Confirmed empirically by CI history**, which is worth recording because it removes all doubt:
+  run #6 on `0f2b051` (the P02-41 remediation) **failed**, run #7 on `1ae3567` **failed**, and run #8
+  on `d19899a` — the first commit carrying the formatting fix — **passed 6/6**. The defect was real,
+  it reached the remote twice, and only `format:check` caught it.
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
   GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via

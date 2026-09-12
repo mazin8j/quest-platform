@@ -143,6 +143,49 @@ export class ProfileService
     };
   }
 
+  /**
+   * Owner cards for another context. Profiles owns the rule, and it is the same rule the public
+   * profile endpoint applies: an inactive, erased or non-PUBLIC profile yields nulls rather than
+   * data, and only the handle and display name ever leave this context.
+   *
+   * Privacy is part of that rule, not an afterthought. Without it a Quest listing became a way to
+   * enumerate handles and display names of accounts that had chosen PRIVATE — and of 13-15s, who
+   * can never be PUBLIC at all — to anonymous callers (audit P02-03). A signed-in viewer sees the
+   * limited card the profile endpoint would give them; an anonymous one sees nothing.
+   */
+  async publicCardsFor(
+    accountIds: ReadonlyArray<string>,
+    viewerAccountId?: string | null,
+    tx?: Executor,
+  ): Promise<Record<string, { username: string | null; displayName: string | null }>> {
+    const rows = await this.repo.findManyByAccountIds(accountIds, tx);
+    const privacy = await this.repo.getPrivacyMany(
+      rows.map((r) => r.accountId),
+      tx,
+    );
+    const out: Record<string, { username: string | null; displayName: string | null }> = {};
+    for (const row of rows) {
+      const isOwner = viewerAccountId !== null && viewerAccountId === row.accountId;
+      // Fail closed on a missing privacy row: absent settings are not permission to publish.
+      const isPublic = privacy.get(row.accountId)?.profileVisibility === 'PUBLIC';
+      // Only the owner, or a genuinely PUBLIC profile. Admitting every signed-in caller made
+      // `isPublic` dead and turned the Quest list into a way to enumerate the handles and display
+      // names of PRIVATE profiles — and of 13-15s, who can never be PUBLIC (audit P02-39).
+      const visible = row.accountActive && row.erasedAt === null && (isOwner || isPublic);
+      out[row.accountId] = {
+        username: visible ? row.username : null,
+        displayName: visible ? row.displayName : null,
+      };
+    }
+    return out;
+  }
+
+  /** Coarse country for server-side eligibility checks in other contexts. Never returned to clients. */
+  async countryFor(accountId: string, tx?: Executor): Promise<string | null> {
+    const row = await this.repo.findByAccountId(accountId, tx);
+    return row?.country ?? null;
+  }
+
   isBlockedEitherWay(a: string, b: string): Promise<boolean> {
     return this.repo.isBlockedEitherWay(a, b);
   }

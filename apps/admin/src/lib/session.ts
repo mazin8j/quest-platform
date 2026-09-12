@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ApiClientError, createApiClient, identityApi } from '@quest/api-client';
+import { ApiClientError, createApiClient, identityApi, questsApi } from '@quest/api-client';
 import { type AccountView, type TokenPair, isStaff } from '@quest/types';
 import { cookies } from 'next/headers';
 
@@ -23,14 +23,21 @@ export function cookieOptions(maxAgeSeconds: number) {
   return { httpOnly: true, sameSite: 'strict' as const, secure, path: '/', maxAge: maxAgeSeconds };
 }
 
+function clientFor(accessToken?: string | null) {
+  return createApiClient({
+    baseUrl: publicEnv.NEXT_PUBLIC_API_BASE_URL,
+    timeoutMs: 10_000,
+    getAccessToken: () => accessToken ?? null,
+  });
+}
+
 export function apiFor(accessToken?: string | null) {
-  return identityApi(
-    createApiClient({
-      baseUrl: publicEnv.NEXT_PUBLIC_API_BASE_URL,
-      timeoutMs: 10_000,
-      getAccessToken: () => accessToken ?? null,
-    }),
-  );
+  return identityApi(clientFor(accessToken));
+}
+
+/** Quest support surface (Phase 02): read a Quest with its assessment history, suspend, reinstate. */
+export function questApiFor(accessToken?: string | null) {
+  return questsApi(clientFor(accessToken));
 }
 
 export async function storeTokens(tokens: TokenPair): Promise<void> {

@@ -99,6 +99,15 @@ export const appConfigSchema = z
     AUTH_DEV_EXPOSE_CODES: booleanStringSchema.default(false),
     /** Public base for pre-signed/public avatar URLs; falls back to pre-signed downloads. */
     MEDIA_PUBLIC_BASE_URL: optional(z.url()),
+
+    // ---- Quest core (Phase 02, ADR-013) ----
+    /**
+     * A safety assessment older than this is treated as stale even when the content hash still
+     * matches: policy changes, and an approval from months ago is not evidence about today's rules.
+     */
+    QUEST_ASSESSMENT_MAX_AGE_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+    /** Upper bound on Quests one account may have in a non-terminal state (abuse control). */
+    QUEST_MAX_ACTIVE_PER_OWNER: z.coerce.number().int().min(1).max(1000).default(50),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV === 'production') {

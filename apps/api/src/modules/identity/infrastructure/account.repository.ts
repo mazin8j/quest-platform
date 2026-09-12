@@ -6,7 +6,7 @@ import type {
   IdentityProvider,
   Role,
 } from '@quest/types';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
@@ -64,6 +64,20 @@ export class AccountRepository {
 
   private exec(tx?: Executor): Executor {
     return tx ?? this.db;
+  }
+
+  /**
+   * Lifecycle states for many accounts in one query, keyed by account id. Used by the owner
+   * eligibility port so a page of Quests costs one account query rather than one per row.
+   * Selects only the state column: nothing else about an account leaves through this path.
+   */
+  async statesByIds(ids: readonly string[], tx?: Executor): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.exec(tx)
+      .select({ id: account.id, state: account.state })
+      .from(account)
+      .where(inArray(account.id, [...ids]));
+    return new Map(rows.map((row) => [row.id, row.state]));
   }
 
   async findById(id: string, tx?: Executor): Promise<AccountRecord | undefined> {

@@ -5,6 +5,11 @@ import { Logger } from 'nestjs-pino';
 
 import { uuidv7 } from '../../../common/ids/uuid-v7';
 import { METRICS, type MetricsPort } from '../../../common/observability/metrics.port';
+import {
+  ACCOUNT_ERASURE_REGISTRY,
+  type AccountErasureRegistryPort,
+  REQUIRED_ERASURE_CONTEXTS,
+} from '../../../infrastructure/account-erasure';
 import { DATABASE, type Database } from '../../../infrastructure/database/database.module';
 import { EVENT_PUBLISHER } from '../../../infrastructure/events/events.module';
 import {
@@ -26,7 +31,9 @@ const SOURCE = 'api.identity';
  * Runs after the grace period (DELETION_GRACE_DAYS) for every PENDING request:
  *   1. one transaction anonymises the account row (email → tombstone hash, DOB → 1900-01-01,
  *      state DELETED), hard-deletes credentials, identities, codes, sessions, devices, export
- *      requests, and erases the profile aggregate through the Profiles provisioning port;
+ *      requests, erases the profile aggregate through the Profiles provisioning port, and runs
+ *      every registered account-erasure contributor (Quest and later contexts) in that same
+ *      transaction;
  *   2. the consent ledger, role ledger and audit ledger are kept (ids only, no PII) as the legal
  *      record that the account existed and what it agreed to;
  *   3. `identity.account.deleted` is published so every other context erases its own data.
@@ -41,6 +48,7 @@ export class AccountDeletionJob {
     @Inject(METRICS) private readonly metrics: MetricsPort,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStoragePort,
     @Inject(PROFILE_PROVISIONER) private readonly profiles: ProfileProvisioningPort,
+    @Inject(ACCOUNT_ERASURE_REGISTRY) private readonly erasure: AccountErasureRegistryPort,
     private readonly logger: Logger,
     private readonly accounts: AccountRepository,
     private readonly sessions: SessionRepository,
@@ -79,6 +87,13 @@ export class AccountDeletionJob {
 
   /** Executes the cascade for one account. Returns false when there was nothing to do. */
   async deleteAccount(accountId: string, deletionRequestId: string): Promise<boolean> {
+    // Refuse to erase at all rather than erase partially: a missing contributor means a whole
+    // context's personal data would silently survive a "completed" deletion (audit P02-25).
+    const registered = new Set(this.erasure.contributors().map((c) => c.context));
+    const missing = REQUIRED_ERASURE_CONTEXTS.filter((context) => !registered.has(context));
+    if (missing.length > 0) {
+      throw new Error(`Account erasure contributors are not registered: ${missing.join(', ')}`);
+    }
     const deletedAt = new Date();
     // Object keys are collected inside the transaction and deleted only after it commits, so a
     // rollback never leaves a live account without its objects (audit P01-02/P01-03).
@@ -105,6 +120,12 @@ export class AccountDeletionJob {
       await this.lifecycle.deleteExports(accountId, tx);
       await this.accounts.revokeAllRoles(accountId, tx);
       objectKeys.push(...(await this.profiles.eraseAccount(accountId, tx)));
+      // Every other bounded context erases its own account-linked rows in this same transaction.
+      // Doing it here rather than in an `identity.account.deleted` handler means a context that
+      // fails to erase aborts the cascade instead of stranding personal data (Phase 02, TD-07).
+      for (const contributor of this.erasure.contributors()) {
+        objectKeys.push(...(await contributor.eraseAccountData(accountId, tx)));
+      }
       await this.accounts.update(
         accountId,
         {
@@ -126,6 +147,23 @@ export class AccountDeletionJob {
     });
     if (!executed) return false;
     for (const key of objectKeys) await this.deleteObject(key, accountId);
+    // Contexts announce their own erasure only now that the cascade has committed.
+    for (const contributor of this.erasure.contributors()) {
+      if (!contributor.afterCommit) continue;
+      try {
+        await contributor.afterCommit(accountId);
+      } catch (error) {
+        // The data is gone; a failed announcement must not undo that or abort the run.
+        this.logger.error(
+          {
+            accountId,
+            context: contributor.context,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          'account erasure announcement failed',
+        );
+      }
+    }
 
     this.metrics.increment('quest.identity.deleted');
     await this.events.publish(
