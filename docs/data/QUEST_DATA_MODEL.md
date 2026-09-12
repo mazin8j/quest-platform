@@ -102,6 +102,25 @@ decisions correctly, so the sequence answers it.
 safe to keep assessments after an account is erased: they carry a hash and a category, not
 anything a person wrote.
 
+### Which decision is in force
+
+`seq` orders decisions; it does not select them. From the Phase 02 gate remediation the row in force
+for a given `(quest_id, content_hash)` is chosen by **authority** — `HUMAN > AI > RULES`, latest
+within the highest authority that has spoken (ADR-015). `assessmentsForContent` returns the rows for
+one hash and the pure resolver in `domain/safety-precedence.ts` decides, so the policy is testable and
+visible rather than encoded in an `ORDER BY`.
+
+Two consequences for anyone reading these tables directly:
+
+- **`state = 'PUBLISHED'` no longer means "publicly visible".** A blocking decision recorded by any
+  writer conceals the Quest on every read without mutating the row, so visibility is
+  `state × publication proof × owner eligibility × decision in force`, computed per request. A stored
+  flag was rejected for ADR-014's reasons: every writer would have to maintain it, and drift would be
+  silent.
+- **A `RULES` row with the greatest `seq` may not be the decision in force.** Querying
+  `ORDER BY seq DESC LIMIT 1` answers a different question than the application does, and answering it
+  that way is how a staff sanction used to be laundered (P1-2).
+
 ## `quest_version`
 
 An immutable snapshot of the content and terms as published, written in the same transaction as the

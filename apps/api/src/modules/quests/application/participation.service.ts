@@ -27,8 +27,13 @@ import { EVENT_PUBLISHER } from '../../../infrastructure/events/events.module';
 import { OWNER_ELIGIBILITY, type OwnerEligibilityPort } from '../../identity';
 import { BLOCK_QUERY, PROFILE_QUERY } from '../../profiles';
 import type { BlockQueryPort, ProfileQueryPort } from '../../profiles';
-import { type OwnerEligible, evaluateAcceptEligibility } from '../domain/eligibility';
+import {
+  type AccessGates,
+  type OwnerEligible,
+  evaluateAcceptEligibility,
+} from '../domain/eligibility';
 import type { QuestRecord } from '../domain/quest';
+import { publishedDecisionPublishable } from '../domain/safety-precedence';
 import {
   type ParticipationRecord,
   ParticipationRepository,
@@ -76,6 +81,23 @@ export class ParticipationService {
     }
   }
 
+  /**
+   * Whether the safety decision in force for this Quest's published content still permits it to be
+   * public. `null` for an unpublished Quest; `false` when a lookup fails, because participation in
+   * content whose safety standing cannot be established is refused, never granted (final delta
+   * audit P1-3).
+   */
+  private async safetyGateFor(quest: QuestRecord): Promise<boolean | null> {
+    if (quest.state !== QuestState.PUBLISHED || quest.publishedContentHash === null) return null;
+    try {
+      const rows = await this.quests.assessmentsForContent(quest.id, quest.publishedContentHash);
+      return publishedDecisionPublishable(quest, rows);
+    } catch {
+      this.metrics.increment('quest.core.safety_decision_unavailable');
+      return false;
+    }
+  }
+
   async accept(
     principal: Principal,
     questId: string,
@@ -84,21 +106,23 @@ export class ParticipationService {
     const quest = await this.quests.findById(questId);
     if (!quest || quest.state === QuestState.ERASED) throw ApiError.notFound('Quest');
 
-    const [blocked, country, effectiveEligibility, ownerEligible] = await Promise.all([
-      this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId),
-      this.profiles.countryFor(principal.accountId),
-      // Folds the *published* assessment's country restrictions into the owner's declared lists,
-      // so the geographic half of a RESTRICTED decision is enforced, not merely recorded (P02-02).
-      this.questService.effectiveEligibilityOf(quest),
-      // Every cross-context lookup is resolved before the transaction opens, so no row lock is
-      // ever held while this service waits on another context's connection.
-      this.ownerEligible(quest.ownerAccountId),
-    ]);
+    const [blocked, country, effectiveEligibility, ownerEligible, safetyPublishable] =
+      await Promise.all([
+        this.blocks.isBlockedEitherWay(principal.accountId, quest.ownerAccountId),
+        this.profiles.countryFor(principal.accountId),
+        // Folds the *published* assessment's country restrictions into the owner's declared lists,
+        // so the geographic half of a RESTRICTED decision is enforced, not merely recorded (P02-02).
+        this.questService.effectiveEligibilityOf(quest),
+        // Every cross-context lookup is resolved before the transaction opens, so no row lock is
+        // ever held while this service waits on another context's connection.
+        this.ownerEligible(quest.ownerAccountId),
+        this.safetyGateFor(quest),
+      ]);
 
     const eligibility = evaluateAcceptEligibility({
       quest,
       eligibility: effectiveEligibility,
-      ownerEligible,
+      gates: { ownerEligible, safetyPublishable },
       publishedMinimumAgeBand: this.questService.publishedAgeBandOf(quest),
       viewer: {
         accountId: principal.accountId,
@@ -353,14 +377,23 @@ export class ParticipationService {
     // Identity is queried. The unlocked preview read is advisory only: when it cannot identify the
     // Quest or the participation is not the caller's, the locked read below reports NOT FOUND, and
     // a 404 must not be downgraded to a 409 that confirms the attempt exists.
-    let ownerEligible: OwnerEligible = true;
+    //
+    // The same reasoning applies to a safety decision that has taken the Quest down: the attempt
+    // cannot be advanced, and can still be abandoned (final delta audit P1-3).
+    let gates: AccessGates = { ownerEligible: true, safetyPublishable: null };
     if (transition !== 'CANCEL') {
       const preview = await this.participations.findById(participationId);
-      const ownerAccountId =
+      const previewQuest =
         preview && preview.accountId === principal.accountId
-          ? (await this.quests.findById(preview.questId))?.ownerAccountId
+          ? await this.quests.findById(preview.questId)
           : undefined;
-      if (ownerAccountId !== undefined) ownerEligible = await this.ownerEligible(ownerAccountId);
+      if (previewQuest !== undefined) {
+        const [ownerEligible, safetyPublishable] = await Promise.all([
+          this.ownerEligible(previewQuest.ownerAccountId),
+          this.safetyGateFor(previewQuest),
+        ]);
+        gates = { ownerEligible, safetyPublishable };
+      }
     }
     return this.db.transaction(async (tx) => {
       const current = await this.participations.findByIdForUpdate(participationId, tx);
@@ -379,7 +412,12 @@ export class ParticipationService {
       // Word for word the message an unpublished Quest gets, and deliberately so: the participant
       // is entitled to know the attempt cannot proceed, and to nothing at all about the account
       // behind it. "Suspended author" and "withdrawn Quest" must be indistinguishable here.
-      if (transition !== 'CANCEL' && (quest.state !== QuestState.PUBLISHED || !ownerEligible)) {
+      if (
+        transition !== 'CANCEL' &&
+        (quest.state !== QuestState.PUBLISHED ||
+          !gates.ownerEligible ||
+          gates.safetyPublishable === false)
+      ) {
         throw ApiError.conflict('This Quest is no longer available');
       }
       const patch = patchFor(current, quest, await this.acceptedWindowHours(current, quest, tx));

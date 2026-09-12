@@ -40,6 +40,23 @@ export interface ViewerContext {
  */
 export type OwnerEligible = boolean;
 
+/**
+ * The two facts about a Quest that live outside the row and outside this function, both of which
+ * can conceal it. Grouped rather than passed as a pair of positional booleans, because "the third
+ * and fourth arguments are both `true`" is exactly the call site nobody reads carefully.
+ */
+export interface AccessGates {
+  /** From `OwnerEligibilityPort`; `false` whenever it could not be established. */
+  ownerEligible: OwnerEligible;
+  /**
+   * Whether the safety decision **in force** for the Quest's published content permits publication
+   * (`publishedDecisionPublishable`). `null` means the Quest is not published, so the question does
+   * not arise — `false` means it is published and something has ruled against that content, which
+   * must conceal it (final delta audit P1-3).
+   */
+  safetyPublishable: boolean | null;
+}
+
 export const QuestAccess = {
   /** Full access: the owner, or support staff. */
   OWNER: 'OWNER',
@@ -79,7 +96,7 @@ function isAgeGated(band: QuestAgeBand | null): boolean {
 export function questAccessFor(
   quest: QuestRecord,
   viewer: ViewerContext,
-  ownerEligible: OwnerEligible,
+  gates: AccessGates,
 ): QuestAccess {
   if (viewer.accountId && viewer.accountId === quest.ownerAccountId) return QuestAccess.OWNER;
   if (viewer.canViewSupport) return QuestAccess.OWNER;
@@ -89,7 +106,14 @@ export function questAccessFor(
   // departing author's Quests stop being public with them. Checked after owner/support so that
   // neither the author nor a moderator loses sight of the Quest, and before everything else so an
   // ineligible owner's Quest is concealed for the same reason an unpublished one is (P02-41).
-  if (!ownerEligible) return QuestAccess.HIDDEN;
+  if (!gates.ownerEligible) return QuestAccess.HIDDEN;
+  // The safety decision in force for the PUBLISHED content, independently of whatever took the
+  // Quest down (or failed to). A rejection recorded by a moderator or a future AI decider used to
+  // be displayed as a badge and otherwise ignored: the Quest stayed PUBLISHED, listed and
+  // acceptable, and the API told the viewer the content was REJECTED while handing it to them
+  // (final delta audit P1-3). Read-side enforcement means no writer can leave dangerous content
+  // public by failing to call the right service method.
+  if (gates.safetyPublishable === false) return QuestAccess.HIDDEN;
   if (quest.visibility === 'PRIVATE') return QuestAccess.HIDDEN;
   const band = publishedAgeBand(quest);
   if (band !== null && isAgeGated(band)) {
@@ -146,14 +170,14 @@ export function evaluateAcceptEligibility(input: {
   eligibility: QuestEligibility;
   publishedMinimumAgeBand: QuestAgeBand;
   viewer: ViewerContext;
-  /** From `OwnerEligibilityPort`; `false` whenever it could not be established. */
-  ownerEligible: OwnerEligible;
+  /** Both external concealment inputs; see `AccessGates`. */
+  gates: AccessGates;
   now: Date;
 }): AcceptEligibility {
   const { quest, viewer } = input;
 
   // Anything the viewer may not even see is refused as "not found", with no reasons attached.
-  const access = questAccessFor(quest, viewer, input.ownerEligible);
+  const access = questAccessFor(quest, viewer, input.gates);
   if (access === QuestAccess.HIDDEN)
     return { eligible: false, reasons: ['NOT_FOUND'], hidden: true };
   // Support staff read Quests; they take part as ordinary members or not at all, and a support

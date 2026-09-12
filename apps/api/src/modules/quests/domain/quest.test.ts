@@ -81,6 +81,7 @@ function assessment(overrides: Partial<AssessmentRecord> = {}): AssessmentRecord
     policyVersion: 'quest-safety-policy@1',
     decidedBy: 'RULES',
     assessedAt: new Date(NOW.getTime() - DAY_MS),
+    seq: 1,
     ...overrides,
   };
 }
@@ -88,7 +89,8 @@ function assessment(overrides: Partial<AssessmentRecord> = {}): AssessmentRecord
 function gate(overrides: Partial<PublishGateInput> = {}): PublishGateInput {
   return {
     quest: quest(),
-    latestAssessment: assessment(),
+    effectiveAssessment: assessment(),
+    anyAssessmentExists: true,
     declaredMinimumAgeBand: 'TEEN_13_15',
     owner: { accountId: OWNER, state: 'ACTIVE', emailVerified: true },
     actorAccountId: OWNER,
@@ -159,35 +161,42 @@ describe('publish gate', () => {
     ],
     ['an erased Quest', { quest: quest({ state: QuestState.ERASED }) }, 'INVALID_STATE_ERASED'],
     ['a stale client hash', { expectedContentHash: 'deadbeef' }, 'CONTENT_HASH_MISMATCH'],
-    ['no assessment at all', { latestAssessment: null }, 'NO_SAFETY_ASSESSMENT'],
     [
+      'no assessment at all',
+      { effectiveAssessment: null, anyAssessmentExists: false },
+      'NO_SAFETY_ASSESSMENT',
+    ],
+    [
+      // The resolver is scoped to the current content hash, so "a decision about other content"
+      // reaches the gate as "nothing in force, but something was assessed once" — which is the
+      // owner-actionable distinction: re-assess, rather than assess for the first time.
       'an assessment of different content',
-      { latestAssessment: assessment({ contentHash: 'other-hash' }) },
+      { effectiveAssessment: null, anyAssessmentExists: true },
       'SAFETY_ASSESSMENT_STALE',
     ],
     [
       'an assessment older than the maximum age',
-      { latestAssessment: assessment({ assessedAt: new Date(NOW.getTime() - 31 * DAY_MS) }) },
+      { effectiveAssessment: assessment({ assessedAt: new Date(NOW.getTime() - 31 * DAY_MS) }) },
       'SAFETY_ASSESSMENT_EXPIRED',
     ],
     [
       'an unassessed decision',
-      { latestAssessment: assessment({ state: 'UNASSESSED' }) },
+      { effectiveAssessment: assessment({ state: 'UNASSESSED' }) },
       'SAFETY_UNASSESSED',
     ],
     [
       'a decision requiring human review',
-      { latestAssessment: assessment({ state: 'REVIEW_REQUIRED' }) },
+      { effectiveAssessment: assessment({ state: 'REVIEW_REQUIRED' }) },
       'SAFETY_REVIEW_REQUIRED',
     ],
     [
       'a rejected decision',
-      { latestAssessment: assessment({ state: 'REJECTED' }) },
+      { effectiveAssessment: assessment({ state: 'REJECTED' }) },
       'SAFETY_REJECTED',
     ],
     [
       'an escalated decision',
-      { latestAssessment: assessment({ state: 'ESCALATED' }) },
+      { effectiveAssessment: assessment({ state: 'ESCALATED' }) },
       'SAFETY_ESCALATED',
     ],
   ];
@@ -205,7 +214,7 @@ describe('publish gate', () => {
       gate({
         actorAccountId: OTHER,
         owner: { accountId: OWNER, state: 'SUSPENDED', emailVerified: false },
-        latestAssessment: null,
+        effectiveAssessment: null,
       }),
     );
     expect(decision.blockers).toEqual(
@@ -213,7 +222,7 @@ describe('publish gate', () => {
         'NOT_OWNER',
         'OWNER_NOT_ACTIVE',
         'OWNER_EMAIL_NOT_VERIFIED',
-        'NO_SAFETY_ASSESSMENT',
+        'SAFETY_ASSESSMENT_STALE',
       ]),
     );
   });
@@ -221,7 +230,7 @@ describe('publish gate', () => {
   it('allows the conditional safety states the shared rule permits', () => {
     for (const state of ['ALLOWED', 'ALLOWED_WITH_WARNING', 'RESTRICTED'] as const) {
       expect(
-        evaluatePublish(gate({ latestAssessment: assessment({ state }) })).allowed,
+        evaluatePublish(gate({ effectiveAssessment: assessment({ state }) })).allowed,
         state,
       ).toBe(true);
     }
@@ -230,7 +239,7 @@ describe('publish gate', () => {
   it('tightens the age band to the assessment restriction, never loosens it', () => {
     const restricted = evaluatePublish(
       gate({
-        latestAssessment: assessment({
+        effectiveAssessment: assessment({
           state: 'RESTRICTED',
           restrictions: { minimumAge: 18, blockedCountries: [], allowedCountries: [] },
         }),
@@ -242,7 +251,7 @@ describe('publish gate', () => {
     const ownerStricter = evaluatePublish(
       gate({
         declaredMinimumAgeBand: 'ADULT',
-        latestAssessment: assessment({
+        effectiveAssessment: assessment({
           state: 'RESTRICTED',
           restrictions: { minimumAge: 13, blockedCountries: [], allowedCountries: [] },
         }),
@@ -256,7 +265,7 @@ describe('publish gate', () => {
     // Publishing anyway would silently enforce 18+ in place of the 21+ the decision demanded.
     const decision = evaluatePublish(
       gate({
-        latestAssessment: assessment({
+        effectiveAssessment: assessment({
           state: 'RESTRICTED',
           restrictions: { minimumAge: 21, blockedCountries: [], allowedCountries: [] },
         }),
@@ -268,7 +277,7 @@ describe('publish gate', () => {
     expect(
       evaluatePublish(
         gate({
-          latestAssessment: assessment({
+          effectiveAssessment: assessment({
             state: 'RESTRICTED',
             restrictions: { minimumAge: 18, blockedCountries: [], allowedCountries: [] },
           }),
@@ -279,7 +288,9 @@ describe('publish gate', () => {
 
   it('is fail-closed by construction: no input combination publishes without an assessment', () => {
     for (const state of Object.values(QuestState)) {
-      const decision = evaluatePublish(gate({ quest: quest({ state }), latestAssessment: null }));
+      const decision = evaluatePublish(
+        gate({ quest: quest({ state }), effectiveAssessment: null }),
+      );
       expect(decision.allowed, state).toBe(false);
     }
   });

@@ -62,6 +62,49 @@ export function toPage<T>(
   };
 }
 
+/**
+ * A page whose rows were filtered **after** the query, where "fewer rows than asked for" therefore
+ * does not mean "no more rows".
+ *
+ * `toPage` derives `hasMore` from the row count, which is correct only when the query returns
+ * exactly what the response contains. Discovery filters on facts that are not columns — owner
+ * account state, safety decisions, blocks — so it can return a short or empty page while the
+ * catalogue continues. Reporting that as end-of-feed stranded every Quest behind a long run of
+ * concealed rows (final delta audit P1-1).
+ *
+ * So the scan reports where it actually reached, and:
+ *  - more survivors than the limit → an ordinary page, continuing from the last returned row;
+ *  - not exhausted → `hasMore: true` continuing from the last row **scanned**, which may be far
+ *    ahead of the last row returned. The page may legitimately be empty: the client pays for the
+ *    concealed run in requests rather than in lost catalogue;
+ *  - exhausted → `hasMore: false`, and only then.
+ *
+ * Continuing from the last *scanned* row rather than the last survivor is what guarantees progress:
+ * a survivor's cursor would re-read the concealed run on every subsequent request.
+ */
+export function toScannedPage<T>(
+  scan: { rows: T[]; scannedThrough: PageCursor | null; exhausted: boolean },
+  limit: number,
+  cursorOf: (row: T) => PageCursor,
+): Paginated<T> {
+  const full = scan.rows.length > limit;
+  const data = full ? scan.rows.slice(0, limit) : scan.rows;
+  if (full) {
+    const last = data[data.length - 1];
+    return {
+      data,
+      pageInfo: { nextCursor: last ? encodeCursor(cursorOf(last)) : null, hasMore: true },
+    };
+  }
+  if (!scan.exhausted && scan.scannedThrough) {
+    return {
+      data,
+      pageInfo: { nextCursor: encodeCursor(scan.scannedThrough), hasMore: true },
+    };
+  }
+  return { data, pageInfo: { nextCursor: null, hasMore: false } };
+}
+
 /** Page of a naturally bounded collection (sessions are capped, devices are per install). */
 export function fullPage<T>(data: T[]): Paginated<T> {
   return { data, pageInfo: { nextCursor: null, hasMore: false } };

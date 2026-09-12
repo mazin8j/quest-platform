@@ -149,6 +149,47 @@ with a regression test; what remains here is the P2 set and the debt the phase d
   append-only property is a code convention with no trigger or `REVOKE` behind it — the same gap as
   TD-34 for the consent ledger, and worth solving once for both.
 
+### Phase 02 final delta audit P1s (2026-09-12, `docs/governance/PHASE_02_FINAL_DELTA_AUDIT_2026-09-12.md`)
+
+All three repaired on this branch with regression tests proven to fail before each repair, and each
+enforcement point mutation-tested individually.
+
+- TD-63 **P1-1 — discovery reported end-of-feed while eligible Quests remained. RESOLVED 2026-09-12.**
+  A run of more than `MAX_DISCOVERY_PASSES × (limit + 1)` consecutive Quests by ineligible owners
+  truncated the public catalogue: the refill loop exited on the pass bound, the scan position was a
+  local variable and was discarded, and `hasMore` came from the survivor count. Reproduced at 3
+  eligible Quests behind 18 concealed ones (`limit=2`): `rows=0, hasMore=false`, 0 of 3 reachable.
+  Fixed by making the scan report where it reached — `toScannedPage` returns `hasMore: true` with a
+  cursor at the last row **scanned** whenever the loop stopped for any reason other than database
+  exhaustion. The pass bound is kept (an unbounded scan is its own abuse vector); what changed is that
+  hitting it costs the client a request instead of the catalogue. The residual is a real trade:
+  concealment can now produce empty pages, which clients must tolerate — documented in
+  `docs/api/QUEST_API.md`.
+
+- TD-64 **P1-2 — a staff suspension was undone by reinstate → re-assess → publish. RESOLVED
+  2026-09-12.** Reproduced over HTTP against real staff endpoints with no SQL at all. Fixed by
+  **ADR-015**: the decision in force is chosen by authority (`HUMAN > AI > RULES`, superseded only by
+  equal or higher authority for the same content hash), not by greatest `seq`. `evaluatePublish` and
+  `assess()` both resolve it. The earlier P02-37 patch refused re-assessment while `SUSPENDED`, which
+  could not work because after reinstatement the state is `DRAFT` — the defect was in the resolution
+  rule, not the lifecycle.
+
+- TD-65 **P1-3 — a blocking decision was displayed and not enforced. RESOLVED 2026-09-12.** A
+  published Quest could carry a HUMAN `REJECTED` for its published content and stay public, with the
+  API returning 200, a badge reading `REJECTED`, and 201 on accept. Fixed by read-side enforcement:
+  `questAccessFor` takes a `safetyPublishable` gate, discovery applies it batched per pass, acceptance
+  inherits it, and `start`/`completion-request` are refused while `cancel` stays open. The badge is now
+  computed from the same resolved decision as the gate, so the two cannot disagree. Read-side
+  deliberately, so a writer that does not yet exist cannot leave dangerous content public by failing to
+  call a service method.
+
+  **Carried forward from this repair:** a Quest concealed by a third-party decision keeps
+  `state = 'PUBLISHED'` and its publication proof, so `/v1/quests/mine` shows the owner `PUBLISHED`
+  with a blocking badge, and the database alone no longer says whether a Quest is publicly visible.
+  Acceptable while no Phase 02 route can record such a decision; **when Phase 14 ships the moderation
+  queue it must perform the full write-side takedown** (state transition, proof cleared, participations
+  withdrawn), not rely on read-side concealment. Recorded in ADR-015's Consequences.
+
 ### Phase 02 gate-audit follow-ups (2026-09-08, `docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md`)
 
 Residual items from the gate audit. Its 2 P0 and 5 P1 findings were repaired on the branch with

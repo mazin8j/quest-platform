@@ -65,6 +65,12 @@ export interface AssessmentRecord {
   policyVersion: string;
   decidedBy: SafetyAssessment['decidedBy'];
   assessedAt: Date;
+  /**
+   * Commit-independent insertion order (`quest_safety_assessment.seq`). The only sound way to order
+   * two decisions: `assessedAt` defaults to the transaction start time and the id is
+   * client-generated (audit P02-30). Used by the precedence rule in `safety-precedence.ts`.
+   */
+  seq: number;
 }
 
 /**
@@ -99,8 +105,24 @@ export interface PublishDecision {
 
 export interface PublishGateInput {
   quest: QuestRecord;
-  /** The most recent assessment for this Quest, whatever its content hash. */
-  latestAssessment: AssessmentRecord | null;
+  /**
+   * The decision **in force** for this Quest's current content, resolved by
+   * `effectiveAssessment` (`domain/safety-precedence.ts`), or `null` when nothing has judged it.
+   *
+   * Not "the most recent row". A machine decision cannot supersede a human one about the same
+   * content, so taking the greatest `seq` let suspend → reinstate → re-assess → publish put
+   * sanctioned content back with a freshly minted `RULES ALLOWED` (final delta audit P1-2).
+   */
+  effectiveAssessment: AssessmentRecord | null;
+  /**
+   * Whether any decision at all has ever been recorded for this Quest, about any content.
+   *
+   * Only ever used to choose between two refusal messages. `effectiveAssessment` is scoped to the
+   * current content hash, so after a safety-relevant edit it is `null` — and telling the owner
+   * "NO_SAFETY_ASSESSMENT" when they had one and edited past it sends them to the wrong action.
+   * `SAFETY_ASSESSMENT_STALE` says what actually happened.
+   */
+  anyAssessmentExists: boolean;
   /** Owner's declared minimum band from the current content. */
   declaredMinimumAgeBand: QuestAgeBand;
   /** Owner facts from the Identity context (never read from its tables). */
@@ -124,13 +146,14 @@ export interface PublishGateInput {
  *  2. the owner account is ACTIVE with a verified email;
  *  3. the lifecycle state permits publication (DRAFT only — IN_REVIEW must be revised first);
  *  4. the client's expected hash matches the stored content hash (no publish-while-editing race);
- *  5. an assessment exists, was made about this exact content hash, and is not older than the
+ *  5. a decision exists for this exact content hash — the one **in force** under the precedence
+ *     rule, so a human block cannot be talked over by a machine — and it is not older than the
  *     configured maximum age;
  *  6. `canPublishWithAssessment` (the shared Trust & Safety rule) allows the state;
  *  7. the age band the Quest will carry satisfies any minimum age the assessment imposed.
  */
 export function evaluatePublish(input: PublishGateInput): PublishDecision {
-  const { quest, latestAssessment: assessment } = input;
+  const { quest, effectiveAssessment: assessment } = input;
   const blockers: string[] = [];
 
   if (quest.ownerAccountId !== input.actorAccountId) blockers.push('NOT_OWNER');
@@ -143,9 +166,12 @@ export function evaluatePublish(input: PublishGateInput): PublishDecision {
 
   let minimumAgeBand = input.declaredMinimumAgeBand;
   if (!assessment) {
-    blockers.push('NO_SAFETY_ASSESSMENT');
+    // Nothing is in force for the content as it stands. Either it was never assessed, or it was
+    // and the owner has since edited past that decision — a different instruction to the owner, so
+    // a different blocker. The hash check that used to live below is subsumed: the resolver only
+    // ever returns a decision about this exact content.
+    blockers.push(input.anyAssessmentExists ? 'SAFETY_ASSESSMENT_STALE' : 'NO_SAFETY_ASSESSMENT');
   } else {
-    if (assessment.contentHash !== quest.contentHash) blockers.push('SAFETY_ASSESSMENT_STALE');
     if (input.now.getTime() - assessment.assessedAt.getTime() > input.maxAssessmentAgeMs) {
       blockers.push('SAFETY_ASSESSMENT_EXPIRED');
     }

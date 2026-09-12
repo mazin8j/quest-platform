@@ -114,8 +114,10 @@ proven to fail by reverting the three enforcement points individually against th
 
 ### Remaining P0 / P1 blockers
 
-None on the branch: **open P0 = 0, open P1 = 0**, and no mandatory gate command failing. Open
-conditions: **A1 independent re-audit**
+None on the branch after the P1 remediation above: **open P0 = 0, open P1 = 0**, and no mandatory gate
+command failing. Note that the 2026-09-12 delta audit recorded 3 open P1 and a gate verdict of FAIL;
+those three are the ones repaired above, and **only a fresh independent audit can retire that
+verdict** — this session repaired the defects and cannot certify its own repairs. Open conditions: **A1 independent re-audit**
 (binding, blocks Phase 03 — unaffected by the remediation, which this same session wrote), A3 CI
 green, A4 developer-machine reproduction, A5 country allow-list before Phase 06, A6 Phase 01's
 carried conditions. A2 is discharged.
@@ -141,6 +143,39 @@ inline; the lockfile diff is ten lines. `pnpm audit --audit-level=high` exits 0 
 lost — proven by removing it. §8 of the gate-audit report has the detail.
 
 **No mandatory gate command is now failing.**
+
+### Final delta audit P1 remediation (2026-09-12)
+
+The independent-format delta audit found 3 P1 defects — one in the P02-41 remediation, two in the
+original publication gate. All three are repaired on this branch; the audit report itself is not
+rewritten.
+
+**P1-1, discovery stranded the catalogue** (TD-63). A run of concealed rows longer than the scan budget
+reported end-of-feed; 0 of 3 eligible Quests were reachable in the reproduction. The scan now reports
+where it actually reached: `hasMore: false` only on true database exhaustion, otherwise a cursor at the
+last row **scanned**. The protective pass bound stays — hitting it now costs a request, not the
+catalogue. Clients must tolerate an empty page that still says there is more.
+
+**P1-2, sanction laundering** (TD-64). Suspend → reinstate → re-assess → publish put sanctioned content
+back, over HTTP with no SQL. **ADR-015** replaces "greatest `seq` wins" with authority:
+`HUMAN > AI > RULES`, superseded only by equal or higher authority for the same content hash. A machine
+may record an opinion about content a human ruled on; it does not take effect. The earlier P02-37 patch
+could not work, because after reinstatement the state is `DRAFT`.
+
+**P1-3, a decision displayed but not enforced** (TD-65). A published Quest could carry a HUMAN
+`REJECTED` and stay public — 200, a badge reading `REJECTED`, and 201 on accept. The decision in force
+is now a read-side precondition on detail, discovery and acceptance, and the badge is computed from the
+same resolved decision as the gate, so the two cannot disagree. Read-side deliberately: a writer that
+does not yet exist cannot leave dangerous content public by forgetting a service call.
+
+Regression coverage: 17 new integration tests and 17 new unit tests, all failing before the repair
+(11 integration failures reproduced the three defects). Five enforcement points were mutation-tested
+individually — reverting the continuation, the publish precedence, the `assess()` precedence, the
+read-side gate or the discovery filter each fails tests, so none is decorative.
+
+Carried forward, and recorded in ADR-015: a Quest concealed by a third-party decision keeps
+`state = 'PUBLISHED'`, so **Phase 14's moderation queue must do the full write-side takedown** rather
+than rely on read-side concealment.
 
 ### CI database image (2026-09-12, commit `fix(ci)`)
 
@@ -434,4 +469,5 @@ Expo mobile (ADR-006), NestJS + zod (ADR-007), AWS me-central-1 (ADR-008), pnpm/
 (ADR-009), immutable-id identity with Argon2id + HS256/rotating-refresh tokens and OIDC adapters
 (ADR-011), OpenAPI generated from zod contracts (ADR-012), and Quest publication gated by a content
 hash and enforced in three layers — shared rule, domain gate, database CHECK (ADR-013), with owner
-account lifecycle governing published content through a synchronous Identity query port (ADR-014).
+account lifecycle governing published content through a synchronous Identity query port (ADR-014), and
+safety decisions resolved by authority and enforced on every read (ADR-015).

@@ -31,6 +31,7 @@ import {
   decodeCursor,
   listPageQuerySchema,
   toPage,
+  toScannedPage,
 } from '../../../common/pagination/cursor-page';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { QuestService } from '../application/quest.service';
@@ -71,7 +72,7 @@ export class QuestsController {
     // filtering and a participation badge, an anonymous one gets the plain public list.
     const principal = principalFromRequest(req) ?? null;
     const cursor = decodeCursor(query.cursor);
-    const rows = await this.views.listDiscoverable(
+    const scan = await this.views.listDiscoverable(
       principal,
       { categoryKey: query.categoryKey, difficulty: query.difficulty },
       {
@@ -79,7 +80,19 @@ export class QuestsController {
         cursor: cursor ? { createdAt: cursor.at, id: cursor.id } : undefined,
       },
     );
-    return toPage(rows, query.limit, (row) => ({ at: row.cursorAt, id: row.questId }));
+    // `toScannedPage`, not `toPage`: a short page here can mean "rows were concealed", and only the
+    // scan knows whether the database actually ran out (final delta audit P1-1).
+    return toScannedPage(
+      {
+        rows: scan.rows,
+        scannedThrough: scan.scannedThrough
+          ? { at: scan.scannedThrough.createdAt, id: scan.scannedThrough.id }
+          : null,
+        exhausted: scan.exhausted,
+      },
+      query.limit,
+      (row) => ({ at: row.cursorAt, id: row.questId }),
+    );
   }
 
   /** The caller's own Quests, in every state. */

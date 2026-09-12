@@ -322,6 +322,66 @@ export class QuestRepository {
     return rows[0] ? toAssessment(rows[0]) : undefined;
   }
 
+  /**
+   * Every decision recorded about one exact content hash, for the precedence rule
+   * (`domain/safety-precedence.ts`). All of them, not the latest: which one is in force depends on
+   * who decided, and that cannot be expressed as an ORDER BY without encoding the policy in SQL.
+   * Bounded in practice — these are the decisions about a single version of one Quest.
+   */
+  async assessmentsForContent(
+    questId: string,
+    contentHash: string,
+    tx?: Executor,
+  ): Promise<AssessmentRecord[]> {
+    const rows = await this.exec(tx)
+      .select()
+      .from(questSafetyAssessment)
+      .where(
+        and(
+          eq(questSafetyAssessment.questId, questId),
+          eq(questSafetyAssessment.contentHash, contentHash),
+        ),
+      )
+      .orderBy(desc(questSafetyAssessment.seq));
+    return rows.map(toAssessment);
+  }
+
+  /**
+   * The same question for a page of Quests, in one query: every decision about each Quest's
+   * *effective* content — what it published if it is published, otherwise what it currently holds.
+   *
+   * One query rather than one per row because this feeds discovery, where a per-Quest lookup would
+   * be an N+1 on the hottest read in the product (the mistake audit P02-41 was repaired to avoid).
+   * The join condition is a `COALESCE` rather than two queries so a mixed page — some published,
+   * some not — still costs one round trip.
+   */
+  async assessmentsForEffectiveContent(
+    questIds: string[],
+    tx?: Executor,
+  ): Promise<Map<string, AssessmentRecord[]>> {
+    if (questIds.length === 0) return new Map();
+    const rows = await this.exec(tx)
+      .select({ assessment: questSafetyAssessment })
+      .from(questSafetyAssessment)
+      .innerJoin(
+        quest,
+        and(
+          eq(quest.id, questSafetyAssessment.questId),
+          sql`${questSafetyAssessment.contentHash} = coalesce(${quest.publishedContentHash}, ${quest.contentHash})`,
+        ),
+      )
+      .where(inArray(questSafetyAssessment.questId, questIds))
+      .orderBy(desc(questSafetyAssessment.seq));
+    const out = new Map<string, AssessmentRecord[]>();
+    for (const row of rows) {
+      const record = toAssessment(row.assessment);
+      const bucket = out.get(record.questId);
+      if (bucket) bucket.push(record);
+      else out.set(record.questId, [record]);
+    }
+    return out;
+  }
+
   async findAssessmentById(id: string, tx?: Executor): Promise<AssessmentRecord | undefined> {
     const rows = await this.exec(tx)
       .select()
@@ -513,5 +573,6 @@ function toAssessment(row: typeof questSafetyAssessment.$inferSelect): Assessmen
     policyVersion: row.policyVersion,
     decidedBy: row.decidedBy as AssessmentRecord['decidedBy'],
     assessedAt: row.assessedAt,
+    seq: Number(row.seq),
   };
 }

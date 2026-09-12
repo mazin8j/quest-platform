@@ -49,6 +49,7 @@ import {
   questContentHash,
   transitionQuest,
 } from '../domain/quest';
+import { effectiveAssessment } from '../domain/safety-precedence';
 import {
   type ParticipationRecord,
   ParticipationRepository,
@@ -319,8 +320,18 @@ export class QuestService {
       // has to take it down, and a favourable one about content parked in review has to release
       // it. Reacting to REVIEW_REQUIRED alone left a REJECTED Quest publicly visible (P02-09) and
       // left IN_REVIEW with no exit (P02-21).
+      // What acts is the decision **in force**, not the row just written. The engine is
+      // deterministic, so re-assessing content a moderator blocked returns the same ALLOWED it
+      // returned before; obeying that row is how a staff sanction used to evaporate (final delta
+      // audit P1-2). The row is still recorded — a moderator needs to see that the engine disagrees
+      // — it simply does not decide.
+      const inForce =
+        effectiveAssessment(
+          await this.quests.assessmentsForContent(questId, locked.contentHash, tx),
+          locked.contentHash,
+        ) ?? record;
       const publishable = canPublishWithAssessment(
-        toSharedAssessment(record),
+        toSharedAssessment(inForce),
         locked.contentHash,
       ).allowed;
       let cancelledRows: ParticipationRecord[] = [];
@@ -422,11 +433,18 @@ export class QuestService {
     const { record, assessmentId, version, minimumAgeBand } = await this.db.transaction(
       async (tx) => {
         const quest = await this.lockOwned(questId, principal, tx);
-        const assessment = await this.quests.latestAssessment(questId, tx);
+        // The decision in force for this exact content, not the newest row: a machine cannot
+        // supersede a human block (final delta audit P1-2, ADR-015).
+        const [forContent, anyEver] = await Promise.all([
+          this.quests.assessmentsForContent(questId, quest.contentHash, tx),
+          this.quests.latestAssessment(questId, tx),
+        ]);
+        const assessment = effectiveAssessment(forContent, quest.contentHash);
         const eligibility = questEligibilitySchema.parse(quest.eligibility);
         const decision = evaluatePublish({
           quest,
-          latestAssessment: assessment ?? null,
+          effectiveAssessment: assessment,
+          anyAssessmentExists: anyEver !== undefined,
           declaredMinimumAgeBand: eligibility.minimumAgeBand,
           owner,
           actorAccountId: principal.accountId,
@@ -720,14 +738,16 @@ export class QuestService {
     if (quest.state === QuestState.PUBLISHED && quest.publishedContentHash === quest.contentHash) {
       return [];
     }
-    const [owner, assessment] = await Promise.all([
+    const [owner, forContent, anyEver] = await Promise.all([
       this.owners.factsFor(principal.accountId),
+      this.quests.assessmentsForContent(quest.id, quest.contentHash),
       this.quests.latestAssessment(quest.id),
     ]);
     const eligibility = questEligibilitySchema.parse(quest.eligibility);
     return evaluatePublish({
       quest,
-      latestAssessment: assessment ?? null,
+      effectiveAssessment: effectiveAssessment(forContent, quest.contentHash),
+      anyAssessmentExists: anyEver !== undefined,
       declaredMinimumAgeBand: eligibility.minimumAgeBand,
       owner,
       actorAccountId: principal.accountId,

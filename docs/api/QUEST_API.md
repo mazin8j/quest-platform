@@ -113,6 +113,16 @@ is still read when present, so a signed-in caller additionally gets Quests by bl
 and a `participating` flag on each card. Age-gated Quests are filtered by the _published_ band; an
 anonymous caller therefore only ever sees Quests published at the platform's lowest band.
 
+**A short page is not the end of the feed.** Discovery filters on facts that are not columns — owner
+account state, the safety decision in force, blocks — so a page can come back short, or empty, while
+the catalogue continues. `hasMore` is therefore `false` only when the database actually ran out of
+rows; when the scan stops because it hit its internal pass budget, the response carries
+`hasMore: true` and a `nextCursor` pointing at the last row **scanned**, which may be far ahead of the
+last row returned. Follow it. A conforming client stops only on `hasMore: false`, and must tolerate an
+empty page that still says there is more: concealment costs requests, not catalogue. Before the Phase
+02 gate remediation a long enough run of concealed rows reported end-of-feed and made everything
+behind it permanently unreachable.
+
 Quests whose **owner account is no longer eligible** to have public content — suspended, deactivated
 or pending deletion, as Identity judges it through `OWNER_ELIGIBILITY` (ADR-014) — are absent from
 the list for every caller, including anonymous ones. The eligibility of a whole page of owners is
@@ -122,8 +132,9 @@ blocked owners, so removing them shortens the underlying read and never the page
 
 `GET /v1/quests/:questId` answers 404 wherever the caller may not know a Quest exists: someone
 else's draft, a suspended or archived Quest, a `PRIVATE` one, a Quest whose owner is blocked either
-way, a Quest whose published age band the viewer does not satisfy, and a Quest whose **owner account
-is not currently eligible** to have public content. That last case is indistinguishable from the
+way, a Quest whose published age band the viewer does not satisfy, a Quest whose **owner account is
+not currently eligible** to have public content, and a Quest whose **safety decision in force** for
+its published content does not permit publication — whoever recorded that decision (ADR-015). That last case is indistinguishable from the
 others by design: the response carries no account state, no owner metadata and no reason, because a
 404 that explains itself is a 403 wearing a different number. Age restriction hides rather
 than merely refusing acceptance, because the instructions are the dangerous part — greying out a
@@ -136,9 +147,11 @@ its owner is ineligible, which is the whole point of a support view — but thos
 fields stay `null` for them; the support view is the route for staff work. An `ERASED` Quest is 404
 for everyone, support included: there is nothing left in it to inspect.
 
-`QuestDetail.safety` is a badge, not a verdict about the draft: it is populated only when the latest
-assessment matches the content that is actually published (or, for an unpublished Quest, its current
-content). A newer assessment of edited draft content says nothing about what is public, so it is
+`QuestDetail.safety` is a badge, not a verdict about the draft: it is populated only when the decision
+**in force** — resolved by authority, not recency (ADR-015) — is about the content that is actually
+published (or, for an unpublished Quest, its current content). It is computed from the same resolved
+decision as the access gate, so the badge can never disagree with the access granted: a response that
+returned `safety.state: "REJECTED"` alongside a readable Quest was defect P1-3. A newer assessment of edited draft content says nothing about what is public, so it is
 withheld rather than shown. `warning` carries the text a `RESTRICTED` or `ALLOWED_WITH_WARNING`
 outcome requires participants to see.
 
@@ -166,7 +179,8 @@ from the Quest as it stands, so an owner cannot shorten someone's deadline after
 `completion-request` refuses with 409 once that window has passed, and is where Phase 02 stops: the
 claim is recorded and `COMPLETION_REQUESTED` is terminal. Evidence, verification and rewards are
 later phases, and no XP, badge or ranking is issued anywhere in this API. Both `start` and `completion-request` also refuse with 409 while the Quest's **owner** is no longer
-eligible, carrying the same `This Quest is no longer available` an unpublished Quest produces — word
+eligible, or while the safety decision in force for its published content refuses publication,
+carrying the same `This Quest is no longer available` an unpublished Quest produces — word
 for word, so a participant cannot tell a withdrawn Quest from a suspended author. `cancel` works from
 `ACCEPTED` or `STARTED`, and deliberately still works when the Quest is no longer published or its
 owner is no longer eligible — a participant must always be able to let go of an attempt, and must
