@@ -258,6 +258,29 @@ deliberately deferred.
   the test catches it immediately and says why. **Remove the override** — and that test — once
   `@nestjs/platform-express` ships a release depending on `>=2.3.0` itself.
 
+- TD-61 **The postgres image build is unverified (2026-09-12).** `fix(ci)` moved
+  `infrastructure/docker/postgres` off the unbuildable `postgis/postgis:16-3.4` onto
+  `postgres:16-bookworm` plus PGDG extension packages, but **the image was never built or run**: the
+  cloud sandbox has a Docker daemon and no reachable container registry (`registry-1.docker.io`
+  answers 403 through the egress proxy, so even `docker build --check` cannot resolve base metadata),
+  and the desktop Linux VM has no Docker at all. Everything database-shaped was verified against
+  natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0, which exercises the same
+  package names and the same migration path but is **not** the image. Before this is called proven,
+  on a machine with Docker: `docker compose down -v`, `docker compose build --no-cache postgres`,
+  `docker compose up -d --wait postgres redis`, then `SELECT version();` and the
+  `pg_available_extensions` query, then the clean migration cycle and the integration suite. Note
+  that PGDG bookworm will supply newer PostGIS and pgvector than the native packages above (PostGIS
+  3.5.x, pgvector 0.8.x), which is expected and is what `default_version` should show.
+
+- TD-62 **`pnpm format:check` is outside the turbo pipeline, so `turbo run lint typecheck test build`
+  is not sufficient verification.** The P02-41 commit left two source files unformatted and passed
+  every check that was actually run, while failing the mandatory CI `format:check` job; it was fixed
+  twice independently (`580a954` on the device, an identical commit in the cloud clone), which is the
+  clearest possible evidence that the gap is easy to fall into. `pnpm verify` does include it. Either
+  make `format` a turbo task so `--filter`/`--force` runs cover it, or make the standing instruction
+  "run `pnpm verify`, not a hand-picked subset". Until then, treat `format:check` as a separate
+  mandatory step in every change.
+
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
   GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via
   Expo/Metro dev tooling, no upstream patch. Re-evaluate at Expo SDK 58 or by the expiry date; remove

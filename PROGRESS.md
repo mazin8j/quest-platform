@@ -142,6 +142,30 @@ lost — proven by removing it. §8 of the gate-audit report has the detail.
 
 **No mandatory gate command is now failing.**
 
+### CI database image (2026-09-12, commit `fix(ci)`)
+
+The Phase 02 CI `migrations` job could not start its database: `infrastructure/docker/postgres` was
+built on `postgis/postgis:16-3.4`, which is Debian 11, and once `bullseye-security` Release metadata
+expired the `apt-get update` in our own layer failed its validity check. The base is now
+`postgres:16-bookworm` (official, Debian 12) with `postgresql-16-postgis-3`,
+`postgresql-16-postgis-3-scripts` and `postgresql-16-pgvector` installed from the PGDG repository the
+image already carries, `signed-by` its own keyring — no repository stanza, no keyring and no trust
+decision of ours, and nothing that weakens APT. `postgis/postgis:16-3.5` was rejected because
+upstream it is still `FROM postgres:16-bullseye`. The PostGIS init script is gone rather than ported:
+extension creation belongs to migration `0000` alone, and the old script created the extension in
+`template1` so that migration's own work was never exercised. `docs/architecture/05_DATA_ARCHITECTURE.md`
+records the base and the reasoning.
+
+**The image itself is still unverified — TD-61.** No container registry is reachable from the cloud
+sandbox and the desktop VM has no Docker, so `docker build` could not run. Every database result was
+produced against natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0: the same
+package names and the same migration path, but not the image. `docker compose build --no-cache
+postgres` and the container extension queries must still be run somewhere with Docker.
+
+Also **TD-62**: `pnpm format:check` is a mandatory CI job that lives outside the turbo pipeline, so
+`turbo run lint typecheck test build` does not cover it. The P02-41 commit left two files unformatted
+and would have failed CI on formatting alone. Use `pnpm verify`, not a hand-picked subset.
+
 ## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
 
 - **Contracts** — `packages/types/src/quest/`: the Quest and participation state-transition tables,
