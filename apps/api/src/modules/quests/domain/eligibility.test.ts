@@ -96,7 +96,11 @@ describe('read access', () => {
 
   it('gives staff access for support work', () => {
     expect(
-      questAccessFor(quest({ state: QuestState.SUSPENDED }), viewer({ canViewSupport: true }), ELIGIBLE),
+      questAccessFor(
+        quest({ state: QuestState.SUSPENDED }),
+        viewer({ canViewSupport: true }),
+        ELIGIBLE,
+      ),
     ).toBe(QuestAccess.OWNER);
   });
 

@@ -347,9 +347,7 @@ export class AccountService {
     return account ? isPublicationEligibleState(account.state) : false;
   }
 
-  async publicationEligibilityFor(
-    accountIds: readonly string[],
-  ): Promise<Map<string, boolean>> {
+  async publicationEligibilityFor(accountIds: readonly string[]): Promise<Map<string, boolean>> {
     const states = await this.accounts.statesByIds(accountIds);
     const out = new Map<string, boolean>();
     for (const [id, state] of states) out.set(id, isPublicationEligibleState(state));
