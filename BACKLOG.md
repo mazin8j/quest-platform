@@ -258,7 +258,18 @@ deliberately deferred.
   the test catches it immediately and says why. **Remove the override** — and that test — once
   `@nestjs/platform-express` ships a release depending on `>=2.3.0` itself.
 
-- TD-61 **The postgres image build is unverified (2026-09-12).** `fix(ci)` moved
+- TD-61 **The postgres image build — RESOLVED by CI 2026-09-12.** GitHub Actions run #8 on
+  `d19899a` is green, and its `Migrations · Integration tests` job passed every step, starting with
+  `Start PostgreSQL (PostGIS + pgvector) and Redis`. That step builds this Dockerfile from a fresh
+  checkout on a runner with real registry access, so `postgres:16-bookworm` plus the PGDG extension
+  packages **does** build, start and serve migrations and the whole integration suite. The `Compose
+config` job is green too. What remains open is only the local developer reproduction (condition
+  A4): nobody has yet run `docker compose build --no-cache postgres` on a workstation and recorded
+  the observed `SELECT version();` and `pg_available_extensions` output. Expect PGDG bookworm to
+  report newer extensions than the native packages used in the sandbox (PostGIS 3.5.x, pgvector
+  0.8.x) — that is correct, not drift. Original entry, kept for the record:
+
+  ~~**The postgres image build is unverified (2026-09-12).**~~ `fix(ci)` moved
   `infrastructure/docker/postgres` off the unbuildable `postgis/postgis:16-3.4` onto
   `postgres:16-bookworm` plus PGDG extension packages, but **the image was never built or run**: the
   cloud sandbox has a Docker daemon and no reachable container registry (`registry-1.docker.io`
@@ -280,6 +291,11 @@ deliberately deferred.
   make `format` a turbo task so `--filter`/`--force` runs cover it, or make the standing instruction
   "run `pnpm verify`, not a hand-picked subset". Until then, treat `format:check` as a separate
   mandatory step in every change.
+
+  **Confirmed empirically by CI history**, which is worth recording because it removes all doubt:
+  run #6 on `0f2b051` (the P02-41 remediation) **failed**, run #7 on `1ae3567` **failed**, and run #8
+  on `d19899a` — the first commit carrying the formatting fix — **passed 6/6**. The defect was real,
+  it reached the remote twice, and only `format:check` caught it.
 
 - TD-17 **Audit risk acceptance (expires 2026-12-01)**: `image-size <=2.0.2` (GHSA-w3rx-r6r6-pgpr,
   GHSA-5p2g-fcmc-qvqq) ignored in `pnpm-workspace.yaml` `auditConfig.ignoreGhsas` — reached only via

@@ -10,30 +10,44 @@ party yet.
 
 **Run this in a new session. Do not run it in one that has written to this branch.**
 
-## Branch state as of 2026-09-11 (read this before the entry checks)
+## Branch state as of 2026-09-12 (read this before the entry checks)
 
-The original prompt names `0f2b051` as the expected tip. That is no longer HEAD — one further
-commit landed afterwards:
+Expect **HEAD = `d19899a`**. The lineage, newest first:
 
-| Commit    | What                                                                                 |
-| --------- | ------------------------------------------------------------------------------------ |
-| `0f2b051` | `audit(P02-41): enforce owner lifecycle on published quests` — the TD-48 remediation |
-| `5fd73cc` | `fix(deps): take the patched multer through a pnpm override` — closes TD-60          |
+| Commit    | What                                                                 |
+| --------- | -------------------------------------------------------------------- |
+| `d19899a` | `docs(governance)` — the CI image change plus TD-61/TD-62            |
+| `05d82c9` | `fix(ci): refresh postgres image for integration tests`              |
+| `580a954` | `style(phase-02): normalize remediation formatting`                  |
+| `1ae3567` | `docs(governance)` — this prompt                                     |
+| `5fd73cc` | `fix(deps): take the patched multer through a pnpm override` — TD-60 |
+| `0f2b051` | `audit(P02-41): enforce owner lifecycle on published quests` — TD-48 |
 
-Both were written by the same non-independent session. Expect **HEAD = `5fd73cc`** with `0f2b051`
-as its parent, and audit both. Other facts to verify rather than trust:
+All of them were written by the same non-independent session. Audit all of them.
 
-- branch `phase-02-quest-core`; `main` at `e0f1d4d` (the Phase 01 merge); `phase-01-approved`
-  (`26182c3`) an ancestor of HEAD; 9 commits since `main`, all Phase 02
-- the working tree carries one untracked folder, `Claude outputs/` — a desktop-app artefact, not
-  repository content
-- the branch has **never been pushed**: the git proxy refuses `mazin8j/quest-platform` from the
-  cloud sandbox and returns 403 after CONNECT from the desktop. Condition **A3 (CI green)** cannot
-  be evaluated until somebody pushes from an unproxied shell
-- `5fd73cc` changes `pnpm-lock.yaml`, so run `pnpm install` before anything else
-- `docs/governance/PHASE_GATE_AUDIT_PHASE_02_2026-09-08.md` now has a §7 (TD-48 remediation) and a
-  §8 (TD-60). §§0–6 are the original audit and were not edited. Treat §7 and §8 as **claims to be
-  falsified**, not as findings
+**GitHub CI is green, and this is verifiable without a token — the repository is public.**
+`https://api.github.com/repos/mazin8j/quest-platform/commits/<sha>/check-runs` returns the six
+mandatory jobs. Run **#8** on `d19899a` is **success on all six**; runs **#6** (`0f2b051`) and **#7**
+(`1ae3567`) **failed**, both on formatting. Confirm this yourself rather than trusting the table, and
+record the SHA CI actually tested — it must equal the audited HEAD.
+
+Consequences you should know going in, each of which is a claim to check rather than accept:
+
+- **A3 appears met** for `d19899a`. It was unverifiable when this prompt was first written, because
+  the branch had not been pushed.
+- **TD-61 (the postgres image was never built) is largely answered by CI**, not by a local run: the
+  `Migrations · Integration tests` job builds `infrastructure/docker/postgres` from a fresh checkout
+  and every step passed, so the `postgres:16-bookworm` + PGDG image builds, starts and serves both the
+  migration cycle and the integration suite. What is genuinely outstanding is the **workstation**
+  reproduction — condition A4. Expect PGDG bookworm to report newer extensions than any natively
+  installed packages (PostGIS 3.5.x, pgvector 0.8.x).
+- **TD-62 is confirmed by CI history**: `pnpm format:check` lives outside the turbo pipeline, so
+  `turbo run lint typecheck test build` passes while CI fails. Two runs failed on it.
+- The working tree carries one untracked folder, `Claude outputs/` — a desktop-app artefact, not
+  repository content.
+- **A1 is the only remaining blocker to Phase 03 authorization.** That is precisely why this must not
+  be run by a session that wrote any of the commits above: closing the last condition by
+  self-certification is the failure mode the condition exists to prevent.
 
 ## Environment notes (from the prior session; verify, do not assume)
 

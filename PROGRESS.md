@@ -156,15 +156,33 @@ extension creation belongs to migration `0000` alone, and the old script created
 `template1` so that migration's own work was never exercised. `docs/architecture/05_DATA_ARCHITECTURE.md`
 records the base and the reasoning.
 
-**The image itself is still unverified — TD-61.** No container registry is reachable from the cloud
-sandbox and the desktop VM has no Docker, so `docker build` could not run. Every database result was
-produced against natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0: the same
-package names and the same migration path, but not the image. `docker compose build --no-cache
-postgres` and the container extension queries must still be run somewhere with Docker.
+**The image is now verified — by CI, not locally (TD-61).** GitHub Actions run #8 on `d19899a` is
+green on all six mandatory jobs, and the `Migrations · Integration tests` job passed every step
+beginning with `Start PostgreSQL (PostGIS + pgvector) and Redis` — which builds this Dockerfile from a
+fresh checkout on a runner with real registry access. The image therefore builds, starts, and serves
+the migration cycle and the full integration suite. Nothing was verifiable in the sandbox (no
+reachable container registry; the desktop VM has no Docker), so the local database results came from
+natively installed PostgreSQL 16.13 + PostGIS 3.4.2 + pgvector 0.6.0 — same package names and
+migration path, not the image. What is still outstanding is the workstation reproduction, which is
+condition A4, not TD-61.
 
 Also **TD-62**: `pnpm format:check` is a mandatory CI job that lives outside the turbo pipeline, so
 `turbo run lint typecheck test build` does not cover it. The P02-41 commit left two files unformatted
-and would have failed CI on formatting alone. Use `pnpm verify`, not a hand-picked subset.
+and **did** fail CI on formatting alone — runs #6 (`0f2b051`) and #7 (`1ae3567`) both failed, and #8
+passed once the fix landed. Use `pnpm verify`, not a hand-picked subset.
+
+### CI status (2026-09-12)
+
+The branch is pushed and open as a pull request. **Run #8 on `d19899a` — the current HEAD — is green
+on all six mandatory jobs**: Format · Lint · Typecheck · Dependency rules; Unit tests · Build;
+Migrations · Integration tests; Compose config; Terraform fmt · validate; Secret scan · Dependency
+audit. **Condition A3 is met for this SHA.**
+
+That leaves **A1 — the independent gate audit — as the only blocker to Phase 03 authorization**, and
+it cannot be closed by the session that wrote Phase 02 and its three remediations. The prompt is
+`docs/governance/PHASE_02_FINAL_DELTA_AUDIT_PROMPT.md`; run it in a session with no implementation
+history. A4 (workstation reproduction), A5 (country allow-list, due before Phase 06) and A6 (Phase 01
+carried conditions) remain as recorded.
 
 ## Completed (Phase 02 — Quest Core, branch `phase-02-quest-core`)
 
